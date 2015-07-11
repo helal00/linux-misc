@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+#Copyright (C) 2015  Helal Uddin <helal00 at gmail.com>
+#This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+#
+#This program is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+#
+#You should have received a copy of the GNU General Public License
+#along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+_srcsbinpath=$(dirname $(readlink -f $0))
+_geturl=""
+if [ ! -z "$1" ] && [ "${1,,}" = "url" ] ; then
+	_geturl="url"
+	shift
+fi
+_getboth=""
+if [ ! -z "$1" ] && [ "${1,,}" = "both" ] ; then
+	_getboth="both"
+	shift
+fi
+if [ -z "$1" ] ; then
+	echo "No url given" 1>&2
+	exit 1
+fi
+_baseurl="$1"
+
+function strtoarry(){
+	local _str _retarray _deli _c _l;_str=$1 _retarray=$2 _deli=$3
+	_c=-1;while read -r _l; do _c=$((_c+1));eval $_retarray[$_c]='$_l';done <<< "$(echo $_str | sed -e "s/$_deli/\n/g")"
+}
+
+_scheme=${_baseurl%%://*}
+_scheme=${_scheme,,}
+_url=${_baseurl#*://}
+
+strtoarry "$_url" "_uparts" '\/'
+if [ ${#_uparts[@]} -lt 3 ] ; then
+	echo "Incomplete url given : $_url. Alteast the url should have http(s)://host/projects/repo/ format" 1>&2
+	exit 1
+fi
+
+_host="sourceforge.net"
+_user=${_uparts[1]}
+_user=${_user,,}
+_repo=${_uparts[2]}
+_repo=${_repo,,}
+
+_finalbaseurl="$_scheme://$_host/$_user/$_repo/files/latest/download"
+
+
+_latesturl=$(curl -Ls -o /dev/null -w %{url_effective} $_finalbaseurl)
+
+if [ ! -z "$_geturl" ] ; then
+printf "${_latesturl//\%/\\x}\n"
+exit 0
+fi
+
+
+_lastestfile=${_latesturl##*/}
+_lastestfile=${_lastestfile//$_repo-}
+_isgz=${_lastestfile##*.}
+if [ ! -z "$_isgz" ] && [ "$_isgz" = "gz" ] ; then
+_latest=${_lastestfile%.*}
+_latest=${_latest%.*}
+else
+_latest=${_lastestfile%.*}
+fi
+
+printf "${_latest//\%/\\x}\n"
+if [ ! -z "$_getboth" ] ; then
+printf "${_latesturl//\%/\\x}\n"
+fi

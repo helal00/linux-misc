@@ -1,0 +1,235 @@
+#!/usr/bin/env bash
+#Copyright (C) 2015  Helal Uddin <helal00 at gmail.com>
+#This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+#
+#This program is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+#
+#You should have received a copy of the GNU General Public License
+#along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+_srcsbinpath=$(dirname $(readlink -f $0))
+
+_noask=""
+if [ "$1" = "noask" ] ; then
+	_noask="noask"
+	shift
+fi
+
+_getlatestrelease=""
+if [ ! -z "$1" ] && [ "${1,,}" = "last" ]; then
+	_getlatestrelease="yes"
+	shift
+fi
+
+if [ -z "$1" ] ; then
+	echo "No url given" 1>&2
+	exit 1
+fi
+_baseurl="$1"
+shift
+
+_directory=""
+if [ ! -z "$1" ] && [ -d "${1}" ]; then
+	_directory="$1"
+	shift
+else
+	echo "No such directory: $1 exist." 1>&2
+	exit 1
+fi
+
+function confirmtogo(){
+	local _conit _valtogo _msg
+	_msg=$1
+	_valtogo=$2
+	if [ -z "$_msg" ] ; then
+		exit 1
+	fi
+	read -p "$_msg" _conit
+	_conit=${_conit,,}
+	if [ -z "$_valtogo" ] ; then
+		_valtogo="yes"
+	else
+		_valtogo=${_valtogo,,}
+	fi
+	if [ "$_valtogo" = "notempty" ] ; then
+		if [ ! -z "$_conit" ] ; then
+			echo "$_conit"
+			return 0
+		else
+			return 1
+		fi
+	elif [ "$_valtogo" = "pathexist" ] ; then
+		if [ -e "$_conit" ] ; then
+			echo "$_conit"
+			return 0
+		else
+			return 1
+		fi
+	elif [ ! -z "$_conit" ] && [ "$_conit" = "$_valtogo" ] ; then
+		return 0
+	fi
+	return 1
+}
+
+function strtoarry(){
+	local _str _retarray _deli _c _l;_str=$1 _retarray=$2 _deli=$3
+	_c=-1;while read -r _l; do _c=$((_c+1));eval $_retarray[$_c]='$_l';done <<< "$(echo $_str | sed -e "s/$_deli/\n/g")"
+}
+
+_scheme=${_baseurl%%://*}
+_scheme=${_scheme,,}
+_url=${_baseurl#*://}
+#_uparts=($(echo "$_url" | tr "/" " " ))
+strtoarry "$_url" "_uparts" '\/'
+if [ ${#_uparts[@]} -lt 3 ] ; then
+	echo "Incomplete url given : $_url. Alteast the url should have http(s)://host/user/repo format" 1>&2
+	exit 1
+fi
+_host=${_uparts[0]}
+_host=${_host,,}
+_user=${_uparts[1]}
+_user=${_user,,}
+_repo=${_uparts[2]}
+_repo=${_repo,,}
+
+_baseurl="$_scheme://$_host/$_user/$_repo"
+
+if ! curl -s --head "$_baseurl" | head -n 1 | grep "HTTP/1.[01] [23].." > /dev/null ; then
+	echo "$_baseurl is not reachable" 1>&2
+	exit 1
+fi
+
+
+if [ -z "$_directory" ] ; then
+_directory=$PWD
+fi
+_curdir=$PWD
+
+_alreadyhave=($(eval echo "${_directory}/${_repo}*"))
+for _rep in "${_alreadyhave[@]}"
+do
+	if [ -z  "$_noask" ] ; then
+		if [ -d "$_rep" ] ; then 
+			if confirmtogo "The repo $_rep exist, might be a older version or will be overridden if same version. Do you want to delete it? (yes/enter only to cancel): " ; then
+				rm -rf "$_rep"
+			fi
+		fi
+	else
+		rm -rf "$_rep"
+	fi
+done
+
+if [ "$_getlatestrelease" = "yes" ] ; then
+	_tempdirectory="/tmp/repostest"
+	mkdir -p "$_tempdirectory/archive"
+	mkdir -p "$_tempdirectory/output"
+	cd "$_tempdirectory"
+	_latestTag=""
+	if [ "$_host" = "github.com" ] ; then
+		_latestTag=$("$_srcsbinpath/githublatest" "$_baseurl")
+		if [ ! -z "$_latestTag" ] ; then
+			wget -q --no-check-certificate "$_baseurl/archive/${_latestTag}.tar.gz" --directory-prefix="$_tempdirectory/archive/"
+		fi
+	fi
+
+	if [ -z "$_latestTag" ] ; then
+		git clone "$_baseurl"
+		if [ $? -eq 0 ] ; then
+			cd "$_repo"
+			_latestTag=$(git describe --tags $(git rev-list --tags --max-count=1 2>/dev/null) 2>/dev/null)
+			if [ -z "$_latestTag" ] ; then
+				echo "No latest tag found. May be, this repo doesn't have any tags. Moving the cloned repo to $_directory" 1>&2
+				if [ -d $_directory/$_repo ] ; then
+					if [ -z  "$_noask" ] ; then
+						if ! confirmtogo "It seems repo $_repo already exist, as the directory $_directory/$_repo exist. To continue fetching, we have to delete it. Do you agree? (yes/press only enter to quit): "  ; then
+							cd "$_curdir"
+							rm -rf "$_tempdirectory"
+							echo "you can use 'git pull' command once into a git repo directory to sync with the new remote commits if any" 1>&2
+							exit 0
+						else
+							rm -rf "$_directory/$_repo"
+						fi
+					else
+						rm -rf "$_directory/$_repo"
+					fi
+				fi
+				mv -f "$_tempdirectory/$_repo/" "$_directory"
+				echo "Fetched $_repo successfully in to $_directory/$_repo"
+				cd "$_curdir"
+				rm -rf "$_tempdirectory"
+				exit 0
+			else
+				git archive -o "$_tempdirectory/archive"/${_latestTag}.tar.gz --prefix=${_repo}-${_latestTag}/ ${_latestTag}
+			fi
+		fi
+	fi
+	
+	strtoarry "$_latestTag" "_tagparts" '\/'
+	if [ ${#_tagparts[@]} -gt 1 ] ; then
+		_ori_latestTag=$_latestTag
+		_dlatestTag=${_latestTag##*/}
+		_subtag=${_latestTag%/*}
+		_subtagm="${_subtag//\//-}"
+		_addsubtag="-${_subtagm}"
+		_asubtag="${_subtagm}/"
+		_latestTag=$_dlatestTag
+	fi
+	
+	_outdirname="${_repo}${_addsubtag}-${_latestTag}"
+	if [ -d "$_directory/$_outdirname" ] ; then
+		if [ -z  "$_noask" ] ; then
+			if ! confirmtogo "It seems repo $_repo version: $_asubtag${_latestTag} already exist, as the directory $_directory/${_repo}${_addsubtag}-${_latestTag} exist, Do you want to overwrite it? (yes/prees only enter to quit): "  ; then
+				cd "$_curdir"
+				rm -rf "$_tempdirectory"
+				exit 0
+			fi				
+		fi
+	fi
+
+	tar -xzf "$_tempdirectory/archive"/${_latestTag}.tar.gz -C "$_tempdirectory/output"
+	_tarexitcode=$?
+	_dircount=$(ls -ld "$_tempdirectory/output"/*/ 2>/dev/null | grep -c ^d)
+	if [ $_dircount -eq 0 ] || [ $_tarexitcode -ne 0 ]; then
+		echo "Error extracting tar file, may be problems with the arichive file $_baseurl/archive/${_ori_latestTag}.tar.gz" 1>&2
+		cd "$_curdir"
+		rm -rf "$_tempdirectory"
+		exit 1
+	elif [ $_dircount -eq 1 ] ; then
+		_exfilepath="$(ls -d "$_tempdirectory/output"/*/)"
+		rsync -qaP "$_exfilepath" "$_directory/$_outdirname/"
+	elif [ $_dircount -gt 1 ] ; then
+		rsync -qaP "$_tempdirectory/output/" "$_directory/$_outdirname/"
+	fi
+
+	echo "Fetched lastest release : $_asubtag${_latestTag}  of $_repo successfully in to $_directory/$_outdirname/"
+	
+	cd "$_curdir"
+	rm -rf "$_tempdirectory"
+else
+	cd "$_directory"
+	if [ -d $_directory/$_repo ] ; then
+		if [ -z  "$_noask" ] ; then
+			if ! confirmtogo "It seems repo $_repo already exist, as the directory $_directory/$_repo exist. To continue fetching, we have to delete it. Do you agree? (yes/press only enter to quit): "  ; then
+				echo "you can use 'git pull' command once into a git repo directory to sync with the new remote commits if any" 1>&2
+				cd "$_curdir"
+				exit 0
+			else
+				rm -rf "$_directory/$_repo"
+			fi
+		else
+			rm -rf "$_directory/$_repo"
+		fi
+	fi
+	git clone "$_baseurl"
+	if [ $? -eq 0 ] ; then
+		echo "Fetched $_repo successfully in to $_directory/$_repo"
+	fi
+	cd "$_curdir"
+fi
+

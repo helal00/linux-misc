@@ -1,0 +1,489 @@
+#!/usr/bin/env bash
+#Copyright (C) 2015  Helal Uddin <helal00 at gmail.com>
+#This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+#
+#This program is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+#
+#You should have received a copy of the GNU General Public License
+#along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+isinteger(){ return $(echo "$1" | grep -qE ^\-?[0-9]+$); } ## to match decimals $(echo "$1" | grep -qE ^\-?[0-9]?\.?[0-9]+$)
+# mask2cdr ()
+# {
+#    # Assumes there's no "255." after a non-255 byte in the mask
+#    local x=${1##*255.}
+#    set -- 0^^^128^192^224^240^248^252^254^ $(( (${#1} - ${#x})*2 )) ${x%%.*}
+#    x=${1%%$3*}
+#    echo $(( $2 + (${#x}/4) ))
+# }
+
+
+# cdr2mask ()
+# {
+#    # Number of args to shift, 255..255, first non-255 byte, zeroes
+#    set -- $(( 5 - ($1 / 8) )) 255 255 255 255 $(( (255 << (8 - ($1 % 8))) & 255 )) 0 0 0
+#    [ $1 -gt 1 ] && shift $1 || shift
+#    echo ${1-0}.${2-0}.${3-0}.${4-0}
+# }
+
+netmasktocidr(){
+	[ -z "$1" ] && return 1 ; local binpos="0-128-192-224-240-248-252-254-255" segments=(${1//./ }) partial=0 CIDR=0
+	for i in {0..3} ; do seg=${segments[$i]}	
+	if [ $seg -eq 255 ] ; then  if [ $partial -eq 0 ] ; then CIDR=$((CIDR+8)) && continue ; else echo "Invalid Netmask" 1>&2 ; return 1 ;fi 
+	elif [ $seg -eq 0 ] ; then if [ $CIDR -eq 0 ] ; then echo "Invalid Netmask" 1>&2 ; return 1; else partial=$((partial+1)) ; continue ;fi
+	else partial=$((partial+1)) ; fi ; if [ $partial -gt 1 ] ; then echo "Invalid Netmask" 1>&2 ; return 1 ; fi	
+	if [ $partial -eq 1 ] && ! (grep -qe "-$seg-" <<< $binpos) ; then echo "Invalid Netmask" 1>&2 && return 1 ; fi			
+	CIDR=$(echo $CIDR+$(grep -o '-' <<< ${binpos%%${segments[$i]}*} | wc -l) | bc) ; done ; echo "$CIDR"
+}
+
+cidrtonetmask(){
+	[ -z "$1" ] && return 1 ; ! ((${1}>=1 && ${1}<=32)) && echo "Invalid CIDR Notation(1-32)" 1>&2 && return 1
+	maxparts=$(($1/8)); local netmask=""; ((${maxparts}>0)) && netmask=$(eval printf '255.%.0s' {1..$maxparts}) && netmask=${netmask%*.}
+	minpart=$(($1%8)); ((${minpart}>0)) && netmask="$netmask."$(echo "256-2^(8-$minpart)" | bc) && netmask=${netmask#.*} &&maxparts=$((maxparts+1))
+	zeroparts=$((4-maxparts)); ((${zeroparts}>0)) && netmask="$netmask"$(eval printf '.0%.0s' {1..$zeroparts})
+	egrep -q "\.$" <<< $netmask && netmask=${netmask:0:${#netmask}-1} ; echo $netmask	
+}
+
+serialtoip(){
+	local serial=$1 outputip=(${2//./ });local seed=$((serial-1)) cntr=4
+	while [ $seed -gt 0 ]; do
+	cntr=$((cntr-1)) 
+	outputip[$cntr]=$(echo "${outputip[$cntr]}+${seed}%256" | bc)
+	seed=$(echo "${seed}/256" | bc)
+	done
+	outputip="$(printf "%s."  "${outputip[@]}")"
+	outputip=${outputip%.}
+	echo "$outputip"
+}
+
+iptoserial(){
+	local curip=(${1//./ }) networkip=(${2//./ })
+	serial[0]=$(echo "(${curip[0]}-${networkip[0]})*256^3" | bc)
+	serial[1]=$(echo "(${curip[1]}-${networkip[1]})*256^2" | bc)
+	serial[2]=$(echo "(${curip[2]}-${networkip[2]})*256^1" | bc)
+	serial[3]=$(echo "(${curip[3]}-${networkip[3]})*256^0" | bc)
+	local newserial=$(echo "$(printf "%s+"  "${serial[@]}")1" | bc )
+	unset -v serial
+	echo "$newserial"
+}
+
+nextipfromserail(){
+	local serial=$1 networkip=$2
+	local nextseial=$(echo "$serial+1" | bc)
+	echo $(serialtoip $nextseial $2)
+}
+
+previpfromserail(){
+	local serial=$1 networkip=$2
+	local prevseial=$(echo "$serial-1" | bc)
+	echo $(serialtoip $prevseial $networkip)
+}
+
+randomipinrange(){
+	maxhost=$(($1-1)) local networkip=$2
+	local randomserial=$(shuf -i 2-$maxhost -n 1)
+	echo $(serialtoip $randomserial $networkip)
+}
+
+nextnetwork(){
+	local maxhost=$1 networkip=$2;local seed=$maxhost outputip=(${networkip//./ }) cntr=4
+	while [ $seed -gt 0 ]; do
+	cntr=$((cntr-1))
+	addthis=$(echo "${seed}%256" | bc)
+	if ((${outputip[$cntr]}+${addthis}>255)) ; then
+		outputip[$cntr]="0"
+		inhand=1
+		for (( i = ${cntr}-1; i >= 0; i-- )); do
+			if ((${outputip[$i]}+${inhand}>255)) ; then
+				outputip[$i]="0"
+			else
+				outputip[$i]=$(echo "${outputip[$i]}+${inhand}" | bc)
+				inhand=0
+			fi
+		done
+		((${inhand}>0)) && unset -v outputip && outputip="N/A"
+	else
+		outputip[${cntr}]=$(echo "${outputip[${cntr}]}+$addthis" | bc)
+	fi
+	seed=$(echo "${seed}/256" | bc)
+	done
+	outputip="$(printf "%s."  "${outputip[@]}")"
+	outputip=${outputip%.}
+	echo "$outputip"
+}
+
+prevnetwork(){
+	local maxhost=$1 networkip=$2;local seed=$maxhost outputip=(${networkip//./ }) cntr=4
+	while [ $seed -gt 0 ]; do
+	cntr=$((cntr-1))
+	delthis=$(echo "${seed}%256" | bc)
+	if (((${outputip[$cntr]}-${delthis})<0)) ; then
+		outputip[$cntr]=$((256-${delthis}))
+		inhand=1
+		for (( i = ${cntr}-1; i >= 0; i-- )); do
+			if (((${outputip[$i]}-${inhand})<0)) ; then
+				outputip[$i]=$((256-${inhand}))
+			else
+				outputip[$i]=$(echo "${outputip[$i]}-${inhand}" | bc)
+				inhand=0
+			fi
+		done
+		((${inhand}>0)) && unset -v outputip && outputip="N/A"
+	else
+		outputip[${cntr}]=$(echo "${outputip[${cntr}]}-$delthis" | bc)
+	fi
+	seed=$(echo "${seed}/256" | bc)
+	done
+	outputip="$(printf "%s."  "${outputip[@]}")"
+	outputip=${outputip%.}
+	echo "$outputip"
+}
+
+ipclass(){
+	local ipinarray=(${1//./ });
+	local netbin=$(printf "%08d" $(bc <<< "ibase=10;obase=2;${ipinarray[0]}"))
+	local bits=${netbin:0:4}
+	if [ "${bits:0:1}x" = "0x" ] ; then
+		echo "Class A"
+	elif [ "${bits}x" = "1111x" ] ; then
+		echo "Class E"
+	elif [ "${bits}x" = "1110x" ] ; then
+		echo "Class D"
+	elif [ "${bits:0:3}x" = "110x" ] ; then
+		echo "Class C"
+	elif [ "${bits:0:2}x" = "10x" ] ; then
+		echo "Class B"
+	fi
+}
+
+binnetmask(){
+	local ipinarray=(${1//./ });
+	ipinarray[0]=$(printf "%08d" $(bc <<< "ibase=10;obase=2;${ipinarray[0]}"))
+	ipinarray[1]=$(printf "%08d" $(bc <<< "ibase=10;obase=2;${ipinarray[1]}"))
+	ipinarray[2]=$(printf "%08d" $(bc <<< "ibase=10;obase=2;${ipinarray[2]}"))
+	ipinarray[3]=$(printf "%08d" $(bc <<< "ibase=10;obase=2;${ipinarray[3]}"))
+	ipinarray="$(printf "%s."  "${ipinarray[@]}")"
+	ipinarray=${ipinarray%.}
+	echo "$ipinarray"
+}
+
+wildcardnetmask(){
+	local ipinarray=(${1//./ });
+	ipinarray[0]=$((255-${ipinarray[0]}))
+	ipinarray[1]=$((255-${ipinarray[1]}))
+	ipinarray[2]=$((255-${ipinarray[2]}))
+	ipinarray[3]=$((255-${ipinarray[3]}))
+	ipinarray="$(printf "%s."  "${ipinarray[@]}")"
+	ipinarray=${ipinarray%.}
+	echo "$ipinarray"
+}
+
+
+ipinfo(){
+
+	if echo "$1" | grep -q "/" ; then
+    	local maskscidr=$(echo "$1" | awk -F/ '{print $NF}')
+    	if (isinteger $maskscidr) ; then
+    		if [ $maskscidr -lt 0 ] && [ $maskscidr -gt 32 ] ; then
+	    	 echo "Not a valid CIDR (1-32)" 1>&2
+	    	 return 1
+	    	fi
+		fi
+    	local ip=$(echo "$1" | awk -F/ '{print $1}')
+    	local segments=($(echo "$ip" | awk -F. '{print $1,$2,$3,$4}'))
+    	local fullmasked=$(($maskscidr/8))
+    	local maskfactor=$(echo "2^(8-$maskscidr%8)" | bc)
+    	if [ ${#segments[@]} -ne 4 ] ; then 
+			echo "Bad IP length." 1>&2
+			return 1
+		fi
+		local cntr=0
+		local networkaddr=""
+		local partialmask=$((fullmasked+1))
+		local validstart=""
+		local validend=""
+		local hostvalidstart=""
+		local hostvalidend=""
+		local broadcastaddr=""
+		local maxhost=0
+		local maxusablehost=0
+
+
+		if [ $partialmask -gt 4 ] ; then
+			partialmask=0	
+		fi
+		local fullhostmask=$((partialmask+1))
+		if [ $fullhostmask -gt 4 ] ; then
+			fullhostmask=0	
+		fi
+		ipp=""
+		for i in "${segments[@]}" ; do
+			i=$(echo "$i" | bc)			
+			cntr=$((cntr+1))
+			if ! (isinteger $i) ; then
+			 	echo "Octet no: $cntr is not an Integer"  1>&2
+			 	return 1
+			fi
+
+			if [ -z ${ipp} ] ; then ipp="$i"; else ipp="${ipp}.$i" ; fi	
+
+			if [ $cntr -le $fullmasked ] ; then
+				if [ $i -ge 0 ] && [ $i -le 255 ] ; then			
+					if [ $cntr -eq 4 ] ; then
+						hostvalidstart="None"
+						hostvalidend="None"
+						broadcastaddr="$networkaddr"
+						maxhost=1
+						maxusablehost=1
+
+					else
+						if [ -z ${networkaddr} ] ; then
+						 	networkaddr="$i"
+						else
+							networkaddr="$networkaddr"."$i" 
+						fi
+
+						if [ -z ${broadcastaddr} ] ; then
+							broadcastaddr="$i"
+						else
+							broadcastaddr="$broadcastaddr"."$i"	
+						fi 
+
+						if [ -z ${hostvalidstart} ] ; then
+							hostvalidstart="$i"
+						else
+							hostvalidstart="$hostvalidstart"."$i"
+						fi
+
+						if [ -z ${hostvalidend} ] ; then
+							hostvalidend="$i"
+						else
+							hostvalidend="$hostvalidend"."$i"
+						fi 
+
+					fi
+					continue
+				else
+					echo "Octet no: $cntr is not in valid range (0-255)"  1>&2
+					return 1	
+				fi
+			fi
+			
+			if [ $cntr -eq $partialmask ] ; then
+				validstart=$(((i/maskfactor)*maskfactor))
+				validend=$(((validstart+maskfactor)-1))
+				if  [ $i -ge $validstart ] && [ $i -le $validend ] ; then
+					if [ -z ${networkaddr} ] ; then
+						networkaddr="$validstart"
+					else
+						networkaddr="$networkaddr"."$validstart"	
+					fi
+					if [ -z ${broadcastaddr} ] ; then
+						broadcastaddr="$validend"
+					else
+						broadcastaddr="$broadcastaddr"."$validend"	
+					fi
+					maxhost=$(((validend-validstart)+1))
+					
+					if [ $cntr -eq 4 ] ; then
+
+						maxusablehost=$((maxhost-2))
+						if [ $maxusablehost -eq 0 ] ; then
+							hostvalidstart="None"
+							hostvalidend="None"
+							echo "This ip is not usable at all"  1>&2
+							return 1
+						else
+
+							if [ -z ${hostvalidstart} ] ; then
+								hostvalidstart="$((validstart+1))"
+							else
+								hostvalidstart="$hostvalidstart"."$((validstart+1))"
+							fi
+							
+							if [ -z ${hostvalidend} ] ; then
+								hostvalidend="$((validend-1))"
+							else
+								hostvalidend="$hostvalidend"."$((validend-1))"
+							fi	
+						fi
+						
+					else
+						maxusablehost=$maxhost
+						if [ -z ${hostvalidstart} ] ; then
+							hostvalidstart="$validstart"
+						else
+							hostvalidstart="$hostvalidstart"."$validstart"
+						fi
+
+						if [ -z ${hostvalidend} ] ; then
+							hostvalidend="$validend"
+						else
+							hostvalidend="$hostvalidend"."$validend"
+						fi 
+					fi								
+					continue 
+				else
+					echo "Octet no: $cntr is not in valid range ($validstart-$validend )"  1>&2
+					return 1
+				fi
+			fi
+
+			if [ $fullhostmask -gt 0 ] && [ $cntr -ge $fullhostmask ] ; then
+				if [ $i -ge 0 ] && [ $i -le 255 ] ; then
+					
+					if [ $cntr -eq 4 ] ; then
+
+						if [ -z ${hostvalidstart} ] ; then
+							hostvalidstart="1"
+						else
+							hostvalidstart="$hostvalidstart"."1"
+						fi
+
+						if [ -z ${hostvalidend} ] ; then
+							hostvalidend="254"
+						else
+							hostvalidend="$hostvalidend"."254"
+						fi 
+
+
+						if [ -z ${maxusablehost} ] ; then
+							maxusablehost="256"
+						else 
+							maxusablehost=$(((maxusablehost*256)-2))
+						fi
+ 
+					else
+						if [ -z ${hostvalidstart} ] ; then
+							hostvalidstart="0"
+						else
+							hostvalidstart="$hostvalidstart"."0"
+						fi 
+
+						if [ -z ${hostvalidend} ] ; then
+							hostvalidend="255" 
+						else	
+							hostvalidend="$hostvalidend"."255"
+						fi
+
+
+						if [ -z ${maxusablehost} ] ; then
+							maxusablehost="256"
+						else 
+							maxusablehost=$((maxusablehost*256))
+						fi
+					fi
+
+					if [ -z ${maxhost} ] ; then
+						maxhost="256"
+					else 
+						maxhost=$((maxhost*256))
+					fi
+
+					if [ -z ${broadcastaddr} ] ; then
+							broadcastaddr="255"
+					else 
+						broadcastaddr="$broadcastaddr"."255"
+					fi
+
+					if [ -z ${networkaddr} ] ; then
+						networkaddr="0"
+					else 
+						networkaddr="$networkaddr"."0"
+					fi	
+				else
+					echo "Octet no: $cntr is not in valid range (0-255)"  1>&2
+					return 1	
+				fi
+			fi
+		done
+		shift
+		if [ "$ipp" = "$broadcastaddr" ] && [ $maskscidr -lt 31 ]; then
+			echo "Warning: Host ip: $ipp is the broadcast address of the network : $networkaddr" 1>&2
+		fi
+		if [ "$ipp" = "$networkaddr" ] && [ $maskscidr -lt 32 ]; then
+			echo "Warning: This ip: $ipp is the network address" 1>&2
+		fi
+
+		declare -A allinfo
+		allinfo[ip]="$ipp"		
+		allinfo[network]="$networkaddr"
+		allinfo[serial]="$(iptoserial $ipp $networkaddr)"
+		allinfo[cidr]="/$maskscidr"
+		allinfo[netmask]="$(cidrtonetmask $maskscidr)"
+		allinfo[binary]="$(binnetmask ${allinfo[netmask]})"
+		allinfo[wildcard]="$(wildcardnetmask ${allinfo[netmask]})"
+		allinfo[start]="$hostvalidstart"
+		allinfo[end]="$hostvalidend"
+		allinfo[broadcast]="$broadcastaddr"
+		allinfo[total]="$maxhost"
+		allinfo[usable]="$maxusablehost"
+		allinfo[nextip]="$(nextipfromserail ${allinfo[serial]} $networkaddr)"
+		allinfo[previp]="$(previpfromserail ${allinfo[serial]} $networkaddr)"
+		allinfo[randomip]="$(randomipinrange $maxhost $networkaddr)"
+		allinfo[nextnet]="$(nextnetwork $maxhost $networkaddr)"
+		allinfo[prevnet]="$(prevnetwork $maxhost $networkaddr)"
+		allinfo[ipclass]="$(ipclass $ipp)"
+
+
+		if [ -z "$1" ] || [ "x${1,,}" = "xall" ] ; then
+			echo "IP address: 		${allinfo[ip]}"
+			echo "Network : 		${allinfo[network]}"
+			echo "Broadcast: 		${allinfo[broadcast]}"
+			echo "Serial: 		${allinfo[serial]}"
+			echo "CIDR Notation: 		${allinfo[cidr]}"
+			echo "Netmask: 		${allinfo[netmask]}"
+			echo "Binary Netmask: 	${allinfo[binary]}"
+			echo "Wildcard Netmask: 	${allinfo[wildcard]}"
+			echo "Start Host : 		${allinfo[start]}"
+			echo "End Host: 		${allinfo[end]}"			
+			echo "Total hosts : 		${allinfo[total]}"
+			echo "Usable hosts : 		${allinfo[usable]}"
+			echo "NextIp : 		${allinfo[nextip]}"
+			echo "PrevIp : 		${allinfo[previp]}"
+			echo "RamdomIp : 		${allinfo[randomip]}"
+			echo "NextNet : 		${allinfo[nextnet]}"
+			echo "PrevNet : 		${allinfo[prevnet]}"
+			echo "Ipclass : 		${allinfo[ipclass]}"
+		else
+			for i in "$@"; do
+				if [ -n "${allinfo[${i,,}]}" ] ; then
+					echo "${allinfo[${i,,}]}"
+				else
+					echo "$i : No such Info key exist" 1>&2
+				fi
+
+			done	
+		fi
+		unset -v allinfo
+    fi
+}
+
+if [ "$1x" = "--helpx" ] ||  [ "$1x" = "-hx" ] ; then
+	srcpath=$(basename $(readlink -f $0))
+	echo "Run the command '$srcpath ip/cidr all' or '$srcpath ip netmask all'."
+	echo "In the output, 1st word (e.g Network,CIDR etc.) is the key for individual values"
+	echo ".keys are case insensitive (e.g CIDR or Cidr or cidr are same meaning)"
+	exit 0
+fi
+
+if echo "$1" | grep -q "/" ; then
+	ipinfo "$@"	
+	exit $?
+else
+	ip=$1
+	shift
+	cidrnot=$(netmasktocidr $1)
+	if [ $? -eq 0 ] ; then
+		shift
+		ipinfo "$ip/$cidrnot" "$@"
+	else
+		exit 1	
+	fi
+fi

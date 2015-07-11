@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+#Copyright (C) 2015  Helal Uddin <helal00 at gmail.com>
+#This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+#
+#This program is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+#
+#You should have received a copy of the GNU General Public License
+#along with this program.  If not, see <http://www.gnu.org/licenses/>.
+_srcsbinpath=$(dirname $(readlink -f $0))
+
+function confirmtogo(){
+	local _conit _valtogo _msg
+	_msg=$1
+	_valtogo=$2
+	if [ -z "$_msg" ] ; then
+		exit 1
+	fi
+	read -p "$_msg" _conit
+	_conit=${_conit,,}
+	if [ -z "$_valtogo" ] ; then
+		_valtogo="yes"
+	else
+		_valtogo=${_valtogo,,}
+	fi
+	if [ "$_valtogo" = "notempty" ] ; then
+		if [ ! -z "$_conit" ] ; then
+			echo "$_conit"
+			return 0
+		else
+			return 1
+		fi
+	elif [ "$_valtogo" = "pathexist" ] ; then
+		if [ -e "$_conit" ] ; then
+			echo "$_conit"
+			return 0
+		else
+			return 1
+		fi
+	elif [ ! -z "$_conit" ] && [ "$_conit" = "$_valtogo" ] ; then
+		return 0
+	fi
+	return 1
+}
+
+if [ ! -f $_srcsbinpath/timeout3 ] ; then
+	echo "Required $_srcsbinpath/timeout3 file not found!" 1>&2
+	exit 1
+fi
+
+_userissudo=""
+
+echo "Please type your sudo password within 15 seconds."
+if $_srcsbinpath/timeout3 -t 15 sudo echo ; then
+	_userissudo="yes"
+else
+	echo "To apply this fix you must have the sudo rights.....aborting" 1>&2
+	exit 1
+fi
+
+#if [ "$USER" == "root" ] ; then
+	#_userissudo="yes"
+#else
+	#read -p "Do you have the right to use sudo?(yes/press enter only to say 'no'): " _iamsudo
+	#_iamsudo=${_iamsudo,,}
+	#if [ ! -z "_iamsudo" ] && [ "$_iamsudo" = "yes" ] && sudo echo ; then
+		#_userissudo="yes"
+	#else
+		#echo "To apply this fix you must have the sudo rights.....aborting" 1>&2
+		#exit 1
+	#fi
+#fi
+
+if [ "$XDG_CURRENT_DESKTOP" = "" ] ; then
+  _desktop=$(echo "$XDG_DATA_DIRS" | sed 's/.*\(xfce\|kde\|gnome\).*/\1/')
+else
+  _desktop=$XDG_CURRENT_DESKTOP
+fi
+
+if [ -z $_desktop ] ; then
+	echo "We cannot detect any Desktop session, aborting...." 1>&2
+	exit 1
+fi
+
+_haveupstart=$(initctl --version)
+if [ $? -ne 0 ] ; then
+	echo "This fix requires 'upstart' to be installed already. We can't find 'upstart' in your system. aborting..." 1>&2
+	exit 1
+fi
+
+_haveacpid=$(acpid --version)
+if [ $? -ne 0 ] ; then
+	echo "This fix requires 'acpid' package to be installed already. We can't find acpid in your system. aborting..." 1>&2
+	exit 1
+fi
+
+echo "We will test you acpi daemon is responding to your brightness keys or not."
+echo "Please press your brightness up and down key only once with in 60 seconds.(for laptops, the keys usually are Fn+Left-arrow and Fn+Right-arrow)"
+
+if [ ! $(acpi_listen -c 4 -t 60 | grep -E "brightnessup|brightnessdown" | wc -l) -ge 2 ] ; then
+	echo "Your acpi modules is not working properly and is beyond the scope of this fix. Please check with your vendor or distro support. For Ubuntu/Debian you may read the document at : https://wiki.ubuntu.com/Kernel/Debugging/Backlight ....aborting"
+	exit 1
+fi
+
+
+read -r -d '' _controlfix<<-'EOL'
+Section "Device"
+    Identifier  "Intel Graphics"
+    Driver      "intel"
+    Option      "AccelMethod"     "sna"
+    Option      "Backlight"       "intel_backlight"
+    BusID       "PCI:0:2:0"
+EndSection
+EOL
+
+if [ "$_userissudo" = "yes" ] && [ -d /usr/share/X11/xorg.conf.d ] && [ -d /sys/class/backlight/intel_backlight ] ; then 
+	if confirmtogo "	IMPORTANT: if your brightness adjusting keys (e.g Fn+left,Fn+right) are not adjusting your brightness, we can fix it for you. To apply the fix, please type 'yes' or just press enter to cancel: " ; then
+		
+		if [ -f /usr/share/X11/xorg.conf.d/80-backlight.conf ] ; then
+			echo "Please modify your /usr/share/X11/xorg.conf.d/80-backlight.conf like below, if it is not:"
+			echo "$_controlfix"
+			read -p "	IMPORTANT: Remember to restart your computer if you make any cnanges. Or the fix will not work. press enter to continue......."
+		else
+			echo "$_controlfix" | sudo tee /usr/share/X11/xorg.conf.d/80-backlight.conf > /dev/null
+			echo "	IMPORTANT: Please restart your computer to apply changes and to continue with this script. Without restart this fix will not work."	1>&2
+			exit 1
+		fi
+		
+	fi
+fi
+
+_useconversion=1
+
+if ! confirmtogo "Please check your brightness up and down keys (for laptops, the keys usually are Fn+Left-arrow and Fn+Right-arrow) is increasing or decreasing brightness or not? (Make sure you restarted the machine if asked previously by this script.) (yes/no) : " ; then
+	_useconversion=0
+fi
+
+_intacpicount=0
+for _acpidrv in $(ls -d /sys/class/backlight/*/ | grep acpi_video)
+do
+	_intacpicount=$((_intacpicount+1))
+done
+
+
+if [ "$_intacpicount" -gt 1 ] && [ ! -s /etc/acpi/brightness.map ] ; then
+	echo "We have found multiple acpi interface on your system, they are: "
+	ls -d /sys/class/backlight/*/ | grep acpi_video
+	echo "Please create a file named 'brightness.map' in /etc/acpi/ dir to indicate the mapping with acpi and video card interfaces installed, they are: "
+	ls -d /sys/class/backlight/*/ | grep -v acpi_video
+	echo "Each line of map file will be like this : "
+	echo "/sys/class/backlight/acpi_video0/|/sys/class/backlight/intel_backlight/"
+	echo "you may use 'xrandr --verbose' or 'acpi' command to investigate."
+	echo "If all these seems complicated to you, please quit here and ask you admin to do it."
+	echo "Please create the map file at /etc/acpi/brightness.map before continue...aborting"
+	exit 1 
+fi
+
+
+
+read -r -d '' _sysdeskopen<<-'EOL'
+description "System level Desktop startup Backlight fix"
+start on login-session-start
+task
+
+script
+_savepath="/var/cache/backlightfix"
+for _drv in $(ls -d /sys/class/backlight/*/ | grep -v acpi_video)
+do
+   _dirname="$(echo "$_drv" | sed 's/\/$//' | awk -F/ '{print $NF}')"	
+   if [ -f "$_savepath/$_dirname/brightness" ] ; then
+      echo "$(cat "$_savepath/$_dirname/brightness")" > "${_drv}brightness" 
+   fi
+done
+end script
+EOL
+
+if [ "$_userissudo" = "yes" ] ; then
+	echo "$_sysdeskopen" | sudo tee /etc/init/backlightfix.conf > /dev/null
+fi
+
+read -r -d '' _fixscript<<-'EOL'
+#!/usr/bin/env bash
+_srcsbinpath=$(dirname $(readlink -f $0))
+_savepath="/var/cache/backlightfix"
+for _drv in $(ls -d /sys/class/backlight/*/ | grep -v acpi_video)
+do
+   _dirname="$(echo "$_drv" | sed 's/\/$//' | awk -F/ '{print $NF}')"
+   mkdir -p "$_savepath/$_dirname"
+   if [ -f "${_drv}brightness" ] ; then
+      _curval="$(cat "${_drv}brightness")"
+      echo "$_curval" > "$_savepath/$_dirname/brightness"
+   fi
+done
+EOL
+
+read -r -d '' _fixscriptconvert<<-'EOL'
+#!/usr/bin/env bash
+
+_srcsbinpath=$(dirname $(readlink -f $0))
+_savepath="/var/cache/backlightfix"
+_useconversion=0
+_action=$1
+
+function strtoarry(){
+    local _str _retarray _deli _c _l;_str=$1 _retarray=$2 _deli=$3
+    eval unset $_retarray
+    _c=-1;while read -r _l; do _c=$((_c+1));eval $_retarray[$_c]='$_l';done <<< "$(echo $_str | sed -e "s/$_deli/\n/g")"
+}
+
+function doaction(){
+    local _spath _tpath _acpi_min _acpi_max _steps _drv_min _drv_max _drv_differ _curval _nextval
+    _slpath=$1
+    _tlpath=$2
+	
+    _acpi_min=$(cat ${_slpath}bl_power)
+    _acpi_max=$(cat ${_slpath}max_brightness)
+    _steps=$((_acpi_max+1))
+	
+    _drv_min=$(cat ${_tlpath}bl_power)
+    _drv_max=$(cat ${_tlpath}max_brightness)
+    _drv_differ=$(((_drv_max / _steps) + (_drv_max % _steps > 0)))
+    _curval=$(cat "${_tlpath}brightness")
+    if [ "$_action" = "up" ] ; then
+        _nextval=$((_curval+_drv_differ))
+        if [ "$_nextval" -gt "$_drv_max" ] ; then
+           echo "$_drv_max" > "${_tlpath}brightness"
+        else
+          echo "$_nextval" > "${_tlpath}brightness"
+        fi
+    elif [ "$_action" = "down" ] ; then
+        _nextval=$((_curval-_drv_differ))
+        if [ "$_nextval" -lt "$_drv_min" ] ; then
+           echo "$_drv_min" > "${_tlpath}brightness"
+        else
+           echo "$_nextval" > "${_tlpath}brightness"
+        fi
+    fi
+}
+
+_intacpicount=0
+for _acpidrv in $(ls -d /sys/class/backlight/*/ | grep acpi_video)
+do
+    _intacpicount=$((_intacpicount+1))
+done
+
+if [ "$_useconversion" -eq 0 ] && [ "$_intacpicount" -gt 1 ] && [ -s "/etc/acpi/brightness.map" ] ; then
+    readarray _paths < "/etc/acpi/brightness.map"
+    for p in "${_paths[@]}"
+    do
+        if [ "${p:0:1}" = "#" ] ; then
+            continue
+        fi
+		
+        strtoarry "$p" "_pparts" '|'
+		
+        if [ ${#_pparts[@]} -ne 2 ] ; then
+           continue
+        fi
+		
+        _spath=${_pparts[0]}
+        _tpath=${_pparts[1]}
+
+        doaction "$_spath" "$_tpath"
+		
+    done
+	
+elif [ "$_useconversion" -eq 0 ] && [ "$_intacpicount" -eq 1 ] ; then
+    _spath="/sys/class/backlight/acpi_video0/"
+    for _udrv in $(ls -d /sys/class/backlight/*/ | grep -v acpi_video)
+    do
+        _tpath=${_udrv}
+        doaction "$_spath" "$_tpath"
+    done
+fi
+
+for _drv in $(ls -d /sys/class/backlight/*/ | grep -v acpi_video)
+do
+   _dirname="$(echo "$_drv" | sed 's/\/$//' | awk -F/ '{print $NF}')"
+   mkdir -p "$_savepath/$_dirname"
+   chmod -R 644 "$_savepath/$_dirname"
+   if [ -f "${_drv}brightness" ] ; then
+      _curval="$(cat "${_drv}brightness")"
+      echo "$_curval" > "$_savepath/$_dirname/brightness"
+   fi
+done
+EOL
+
+if [ "$_userissudo" = "yes" ] ; then
+	if [ "$_useconversion" -eq 0 ] ; then
+		echo "$_fixscriptconvert" | sudo tee /etc/acpi/backlightfix > /dev/null
+	else
+		echo "$_fixscript" | sudo tee /etc/acpi/backlightfix > /dev/null
+	fi
+	sudo chmod +x /etc/acpi/backlightfix
+fi
+
+read -r -d '' _fixdown<<-'EOL'
+event=video/brightnessdown
+action=/etc/acpi/backlightfix down
+EOL
+
+if [ "$_userissudo" = "yes" ] ; then
+	echo "$_fixdown" | sudo tee /etc/acpi/events/backlightdownfix > /dev/null
+fi
+
+read -r -d '' _fixup<<-'EOL'
+event=video/brightnessup
+action=/etc/acpi/backlightfix up
+EOL
+
+if [ "$_userissudo" = "yes" ] ; then
+	echo "$_fixup" | sudo tee /etc/acpi/events/backlightupfix > /dev/null
+fi
+
+echo "	INFORMATION: Fix applied successfully. Please adjust your brithness now, then logout and login again to see the changes."
