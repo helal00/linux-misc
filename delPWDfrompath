@@ -37,6 +37,10 @@ if [ -z "$_bashrcfile" ] ; then
 	_bashrcfile="$(eval echo ~/.bashrc)"
 fi
 
+if echo $PATH | grep -qo ":$_srcsbinpath" ; then
+export PATH=${PATH//:$(escapepath "$_srcsbinpath")}
+fi
+
 if _grepline=$(grep -F "export PATH=\$PATH:$_srcsbinpath" "$_bashrcfile") ; then
 	if [ "${_grepline:0:1}" != "#" ] ; then
 		replaceline "$(escapepath "export PATH=\$PATH:$_srcsbinpath")" "#export PATH=\$PATH:$_srcsbinpath" "$_bashrcfile"
