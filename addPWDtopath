@@ -37,7 +37,10 @@ if [ -z "$_bashrcfile" ] ; then
 	_bashrcfile="$(eval echo ~/.bashrc)"
 fi
 
+
+if ! echo $PATH | grep -qo ":$_srcsbinpath" ; then
 export PATH=$PATH:$_srcsbinpath
+fi
 
 if ! _grepline=$(grep -F "export PATH=\$PATH:$_srcsbinpath" "$_bashrcfile") ; then
 	sed -i -e '$a\' "$_bashrcfile"
