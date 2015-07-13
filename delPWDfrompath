@@ -13,36 +13,27 @@
 #You should have received a copy of the GNU General Public License
 #along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-_srcsbinpath=$PWD
+_curdir=$PWD
+_srcsbinpath=$(dirname $(readlink -f $0))
 
-function escapepath(){
-	local _thep
-	_thep=$1
-	_thep=${_thep//\//\\/}
-	echo "$_thep"
-}
-
-function replaceline(){
-	local _pattern _replace _file
-	_pattern=$1
-	_replace=$2
-	_file=$3
-	sed -i "/$_pattern/ { c \
-	$_replace
-	}" "$_file"
-}
+if [ -s "$_srcsbinpath/functions" ] ; then
+	. $_srcsbinpath/functions	
+else
+	echo "$_srcsbinpath/functions file not found!" 1>&2
+	exit 1
+fi
 
 _bashrcfile="$(eval echo $1)"
 if [ -z "$_bashrcfile" ] ; then
 	_bashrcfile="$(eval echo ~/.bashrc)"
 fi
 
-if echo $PATH | grep -qo ":$_srcsbinpath" ; then
-export PATH=${PATH//:$(escapepath "$_srcsbinpath")}
+if echo $PATH | grep -qo ":$_curdir" ; then
+export PATH=${PATH//:$(escapepath "$_curdir")}
 fi
 
-if _grepline=$(grep -F "export PATH=\$PATH:$_srcsbinpath" "$_bashrcfile") ; then
+if _grepline=$(grep -F "export PATH=\$PATH:$_curdir" "$_bashrcfile") ; then
 	if [ "${_grepline:0:1}" != "#" ] ; then
-		replaceline "$(escapepath "export PATH=\$PATH:$_srcsbinpath")" "#export PATH=\$PATH:$_srcsbinpath" "$_bashrcfile"
+		replaceline "$(escapepath "export PATH=\$PATH:$_curdir")" "#export PATH=\$PATH:$_curdir" "$_bashrcfile"
 	fi
 fi

@@ -34,39 +34,12 @@ if [ -z "$1" ] && [ "${1%%-*}" = "nginx" ]; then
 	shift
 fi
 
-function confirmtogo(){
-	local _conit _valtogo _msg
-	_msg=$1
-	_valtogo=$2
-	if [ -z "$_msg" ] ; then
-		exit 1
-	fi
-	read -p "$_msg" _conit
-	_conit=${_conit,,}
-	if [ -z "$_valtogo" ] ; then
-		_valtogo="yes"
-	else
-		_valtogo=${_valtogo,,}
-	fi
-	if [ "$_valtogo" = "notempty" ] ; then
-		if [ ! -z "$_conit" ] ; then
-			echo "$_conit"
-			return 0
-		else
-			return 1
-		fi
-	elif [ "$_valtogo" = "pathexist" ] ; then
-		if [ -e "$_conit" ] ; then
-			echo "$_conit"
-			return 0
-		else
-			return 1
-		fi
-	elif [ ! -z "$_conit" ] && [ "$_conit" = "$_valtogo" ] ; then
-		return 0
-	fi
-	return 1
-}
+if [ -s "$_srcsbinpath/functions" ] ; then
+	. $_srcsbinpath/functions	
+else
+	echo "$_srcsbinpath/functions file not found!" 1>&2
+	exit 1
+fi
 
 if [ ! -z "$1" ] ; then
 	if [ -d "$1" ] ; then

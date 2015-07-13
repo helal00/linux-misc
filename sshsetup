@@ -26,13 +26,12 @@ if [ -z _knownhostfile ] ; then
 	fi
 fi
 
-function isinteractive(){
-	fd=0   # stdin
-	if [ -t "$fd" ] || [ -p /dev/stdin ] ; then
-	  return 0
-	fi
-	return 1
-}
+if [ -s "$_srcsbinpath/functions" ] ; then
+	. $_srcsbinpath/functions	
+else
+	echo "$_srcsbinpath/functions file not found!" 1>&2
+	exit 1
+fi
 
 if ! isinteractive ; then
 	echo "This script can't run in non-interactive mode...exiting." 1>&2

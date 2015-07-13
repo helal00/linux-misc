@@ -30,10 +30,12 @@ if [ -z "$1" ] ; then
 fi
 _baseurl="$1"
 
-function strtoarry(){
-	local _str _retarray _deli _c _l;_str=$1 _retarray=$2 _deli=$3
-	_c=-1;while read -r _l; do _c=$((_c+1));eval $_retarray[$_c]='$_l';done <<< "$(echo $_str | sed -e "s/$_deli/\n/g")"
-}
+if [ -s "$_srcsbinpath/functions" ] ; then
+	. $_srcsbinpath/functions	
+else
+	echo "$_srcsbinpath/functions file not found!" 1>&2
+	exit 1
+fi
 
 _scheme=${_baseurl%%://*}
 _scheme=${_scheme,,}

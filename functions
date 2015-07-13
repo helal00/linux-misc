@@ -1,0 +1,418 @@
+#!/usr/bin/env bash
+#Copyright (C) 2015  Helal Uddin <helal00 at gmail.com>
+#This program is free software: you can redistribute it and/or modify
+#it under the terms of the GNU General Public License as published by
+#the Free Software Foundation, either version 3 of the License, or
+#(at your option) any later version.
+#
+#This program is distributed in the hope that it will be useful,
+#but WITHOUT ANY WARRANTY; without even the implied warranty of
+#MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#GNU General Public License for more details.
+#
+#You should have received a copy of the GNU General Public License
+#along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+#_miscpath=""
+#function addmiscpath(){
+	#local _var _com _comloc
+	#_com=$1
+	#_var="_${1}"
+	#_comloc=$2
+	#if [ -z "$_comloc" ] || [ ! -x "$_comloc" ]; then 
+		#_comloc=$(command -v "$_com")
+	#fi
+	#if [ -z "$_comloc" ] ; then
+		#echo "	ERROR: linux-misc/$_com command not found in your system. Please install it from https://github.com/helal00/linux-misc before continue. If the command is already installed, plese specify it in $_miscpath with adding a line as '$_var=/path/to/$_com'. Create the file if doesn't exist already."
+		#return 1
+	#else		
+		#if ! grep -Fq "$_var=" "$_miscpath" ; then
+			#sed -i -e '$a\' "$_miscpath"
+			#echo "$_var=$_comloc" >> "$_miscpath"
+		#fi
+		#echo "$_comloc"
+	#fi
+	#return 0
+#}
+
+
+function isvalidip4(){
+	if echo "$1" | grep -qE "^(([0-9][0-9]?|[0-1][0-9][0-9]|[2][0-4][0-9]|[2][5][0-5])\.){3}([0-9][0-9]?|[0-1][0-9][0-9]|[2][0-4][0-9]|[2][5][0-5])$" ; then
+		return 0
+	fi
+	return 1
+}
+
+function confirmtogo(){
+	local _conit _valtogo _msg
+	_msg=$1
+	_valtogo=$2
+	if [ -z "$_msg" ] ; then
+		return 1
+	fi
+	read -p "$_msg" _conit
+	_conit=${_conit,,}
+	if [ -z "$_valtogo" ] ; then
+		_valtogo="yes"
+	else
+		_valtogo=${_valtogo,,}
+	fi
+	if [ "$_valtogo" = "notempty" ] ; then
+		if [ ! -z "$_conit" ] ; then
+			echo "$_conit"
+			return 0
+		else
+			return 1
+		fi
+	elif [ "$_valtogo" = "pathexist" ] ; then
+		if [ -e "$_conit" ] ; then
+			echo "$_conit"
+			return 0
+		else
+			return 1
+		fi
+	elif [ ! -z "$_conit" ] && [ "$_conit" = "$_valtogo" ] ; then
+		return 0
+	fi
+	return 1
+}
+
+#strtoarry "$_url" "_uparts" '\/'
+function strtoarry(){
+	local _str _retarray _deli _c _l;_str=$1 _retarray=$2 _deli=$3
+	eval unset $_retarray
+	_c=-1;while read -r _l; do _c=$((_c+1));eval $_retarray[$_c]='$_l';done <<< "$(echo $_str | sed -e "s/$_deli/\n/g")"
+}
+
+
+function getosversion(){
+	if [ -f /etc/os-release ] ; then
+		eval $(cat /etc/os-release | grep "VERSION_ID")
+		echo $VERSION_ID
+	fi
+}
+
+function isposint(){
+	local _val
+	_val=$1
+	if [ -n "$_val" ] && echo "$_val" | grep -q "^-\?[0-9]*$" && [ "$_val" -ge 0 ] ; then
+		return 0
+	fi
+	return 1
+}
+
+function isint(){
+	local _val
+	_val=$1
+	if [ -n "$_val" ] && echo "$_val" | grep -q "^-\?[0-9]*$" ; then
+		return 0
+	fi
+	return 1
+}
+
+function escapepath(){
+	local _thep
+	_thep=$1
+	_thep=${_thep//\//\\/}
+	echo "$_thep"
+}
+
+function replaceline(){
+	local _pattern _replace _file
+	_pattern=$1
+	_replace=$2
+	_file=$3
+	sed -i "/$_pattern/ { c \
+	$_replace
+	}" "$_file"
+}
+
+
+function join { local IFS="$1"; shift; echo "$*"; }
+
+function getosname(){
+	if [ -f /etc/os-release ] ; then
+		eval $(cat /etc/os-release | grep "ID")
+		echo $ID
+	fi
+}
+
+function isinteractive(){
+	fd=0   # stdin
+	if [ -t "$fd" ] || [ -p /dev/stdin ] ; then
+	  return 0
+	fi
+	return 1
+}
+
+function getowner(){
+	local _entry	
+	_entry="$1"	
+	if [ -z "$_entry" ] ||  [ ! -e "$_entry" ] ; then
+		echo ""
+	else
+		if [ -d "$_entry" ] ; then
+			echo $(ls -al "$_entry" | grep ' \.$' | awk '{print $3}')
+		else
+			echo $(ls -al "$_entry" | awk '{print $3}') 
+		fi
+	fi
+}
+
+
+
+function getnewest(){
+	
+	local _loc _pat _new _setvar _owner _ret
+	_loc=$1
+	_pat=$2
+	_setvar=$3
+	_owner=$4
+	
+	#echo "this $_loc $_pat $_setvar"
+	_ret=1
+	_new=""
+	for sp in $(ls -a ${_loc} | grep "${_pat}")
+	do
+		if [ -z "$_new" ] || [ "${_loc}/$sp" -nt "${_loc}/$_new" ] ; then
+			if [ ! -z "$_owner" ] ; then		
+				if [ "$_owner" = $(getowner "${_loc}/$_new") ] ; then
+					_new=$sp
+				fi
+			else
+				_new=$sp
+			fi
+		fi
+	done
+	if [ ! -z "$_new" ] ; then
+		eval $_setvar=${_loc}/$_new
+		_ret=0
+	fi
+	
+	return $_ret
+	
+}
+
+function isinstalled(){
+	local _cmd _cmdloc
+	_cmd=$1
+	if [ -z $2 ] ; then
+		_cmdloc=$(command -v $_cmd)
+	else
+		_cmdloc=$2
+	fi
+	
+	if [ -z "$_cmdloc"  ] || [ ! -x "${_cmdloc}" ] ; then
+		#echo "$_cmd is not installed"
+		return 1
+	else
+		#echo "$_cmd is installed"
+		echo "$_cmdloc"
+		return 0
+	fi
+}
+
+function installpkg(){
+	local _pkgname _exitonfail _retval _helpurl _confirmmsg
+	_retval=1
+	_pkgname=$1
+	
+	if [ -z "$1" ] ; then
+		echo "No package name specified."
+		return $_retval
+	else
+		_pkgname=$1
+	fi
+	
+	if [ -z "$2" ] ; then
+		_exitonfail=1
+	else
+		_exitonfail=$2
+	fi
+	
+	if [ ! -z "$4" ] ; then
+		_helpurl=" Details at: $4 ."
+	fi
+
+	if [ $_debianbased -eq 0 ] ; then
+		if [ ! -z "$3" ] ; then
+			read -p "$3" _confirmmsg
+			_confirmmsg=${_confirmmsg,,}
+			if [ -z "$_confirmmsg" ] || [ ! "$_confirmmsg" = "yes" ] ; then
+				if [ $_exitonfail -eq 0 ] ; then
+					return 1
+				fi
+			fi
+		fi
+		sudo apt-get -y install $_pkgname
+		if [ $? -eq 0 ] ; then
+			_retval=0
+		else
+			echo "Please Install '$_pkgname' package(s) to continue. apt-get installation fails.$_helpurl" 1>&2
+			if [ $_exitonfail -eq 0 ] ; then
+				return 1
+			fi
+		fi
+	else
+		echo "Please Install '$_pkgname' package(s) for your distro to continue.$_helpurl" 1>&2
+		if [ $_exitonfail -eq 0 ] ; then
+			return 1
+		fi
+	fi
+	return $_retval;
+}
+
+
+function golanginstalled(){
+	
+	local _loc _verline
+	_loc=$_go
+	
+	if [ -z "$_loc" ] ; then
+		 _loc=$(isinstalled "go" "$_go")
+	fi
+	
+	if [ -z "$_loc" ] && [ -x "/usr/local/go/bin/go" ] ; then
+		_loc="/usr/local/go/bin/go"
+	fi
+	
+	if [ ! -z "$_loc" ] && [ -x "$_loc" ] && $(echo $($_loc version) | grep -q "go version go") ; then
+		_go="$_loc"
+		echo "$_loc"
+		return 0
+	fi
+	
+	return 1
+
+}
+
+_goversion="1.4.2"
+_osarch="386"
+if uname -m | grep -qis "x86_64" ; then
+	_osarch="amd64"
+fi
+function installgo()
+{
+	local pkgname failedmsg retval dirtoinstall golanghome grepline
+	failedmsg="go lang auto install failed!! to continue please try instruction in http://golang.org/doc/install"
+	pkgname="go${_goversion}.linux-${_osarch}.tar.gz"
+	bashrcfile=$(eval echo ~/.bashrc)
+	bashrcfileescaped=${thep//\//\\/}
+	retval=1
+
+	if ! golanginstalled ; then
+		if [ $_debianbased -eq 0 ] ; then
+			
+			if ! _wget=$(isinstalled "wget" "$_wget") ; then
+				if ! installpkg "wget" 0 "'wget' $_installconfirmmsg" ; then
+					_installfailed=1
+					return 1
+				fi		
+			fi
+			
+			if ! golanghome=$(confirmtogo "Default go language home directory: $(eval echo ~/.gohome) . Please type a custom directory or press only enter to take the default directory: " "notempty") ; then
+				golanghome=$(eval echo ~/.gohome)
+			fi
+			
+			if [ ! -e "$golanghome" ] ; then
+				sudo mkdir -p "$golanghome"
+				sudo chown $(id -u):$(id -g) "$golanghome"
+				if [ $? -ne 0 ] ; then
+					echo " ERROR: Go Language home directory $golanghome can't be created" 1>&2
+					return 1
+				fi
+			fi
+			
+			if ! dirtoinstall=$(confirmtogo "Default go language install directory: /usr/local . Please type a custom directory or press only enter to take the default directory: " "notempty") ; then
+				dirtoinstall="/usr/local"
+			fi
+			
+			if [ ! -e "$dirtoinstall" ] ; then
+				sudo mkdir -p "$dirtoinstall"
+				if [ $? -ne 0 ] ; then
+					echo " ERROR: Go Language install directory $dirtoinstall can't be created" 1>&2
+					return 1
+				fi
+			fi
+			
+			_curpath="$PWD"
+			rm -rf /tmp/$pkgname
+			sudo rm -rf "$dirtoinstall/go"
+			cd /tmp
+
+			$_wget --no-check-certificate "https://storage.googleapis.com/golang/$pkgname" -O "$pkgname" || ( cd $_curpath && echo "$failedmsg" 1>&2 && return 1 )
+			sudo tar -C "$dirtoinstall" -xzf $pkgname || ( cd $_curpath && echo "$failedmsg" 1>&2 && sudo rm -rf "$dirtoinstall/go" && return 1 )
+			sudo rm -rf $pkgname
+			cd $_curpath
+			export PATH="$PATH:$dirtoinstall/go/bin"
+			export GOPATH="$golanghome"
+			export PATH="$PATH:$golanghome/bin"
+			_go="$dirtoinstall/go/bin/go"
+			if ! grepline=$(grep -F "export PATH=\$PATH:$dirtoinstall/go/bin" ~/.bashrc) ; then
+				sudo sed -i -e '$a\' ~/.bashrc
+				echo "export PATH=\$PATH:$dirtoinstall/go/bin" >> ~/.bashrc	|| ( echo "$failedmsg" 1>&2 && sudo rm -rf "$dirtoinstall/go" && return 1 )
+			else
+				if [ "${grepline:0:1}" = "#" ] ; then
+					replaceline "$(escapepath "export PATH=\$PATH:$dirtoinstall/go/bin")" "export PATH=\$PATH:$dirtoinstall/go/bin" "$(eval echo ~/.bashrc)"
+				fi
+			fi
+			if ! grepline=$(grep -F "export GOPATH=$golanghome" ~/.bashrc) ; then
+				sed -i -e '$a\' ~/.bashrc
+				echo "export GOPATH=$golanghome" >> ~/.bashrc || ( echo "$failedmsg" 1>&2 && sudo rm -rf "$dirtoinstall/go" && return 1 )
+			else
+				if [ "${grepline:0:1}" = "#" ] ; then
+					replaceline "$(escapepath "export GOPATH=$golanghome")" "export GOPATH=$golanghome" "$(eval echo ~/.bashrc)"
+				fi
+			fi
+			if ! grepline=$(grep -F "export PATH=\$PATH:$golanghome/bin" ~/.bashrc) ; then
+				sed -i -e '$a\' ~/.bashrc
+				echo "export PATH=\$PATH:$golanghome/bin" >> ~/.bashrc || ( echo "$failedmsg" 1>&2 && sudo rm -rf "$dirtoinstall/go" && return 1 )
+			else
+				if [ "${grepline:0:1}" = "#" ] ; then
+					replaceline "$(escapepath "export PATH=\$PATH:$golanghome/bin")" "export PATH=\$PATH:$golanghome/bin" "$(eval echo ~/.bashrc)"
+				fi
+			fi
+			installpkg "git mercurial" || ( echo "$failedmsg" 1>&2 && sudo rm -rf "$dirtoinstall/go" && return 1 )
+			retval=0;		
+		fi
+	else
+		if [ ! -z "$_go" ] ; then
+			if ! grepline=$(grep -F "export PATH=\$PATH:$(dirname $_go)" ~/.bashrc) ; then
+				sudo sed -i -e '$a\' ~/.bashrc
+				echo "export PATH=\$PATH:$(dirname $_go)" >> ~/.bashrc || ( echo "$failedmsg" 1>&2 && sudo rm -rf /usr/local/go && return 1 )
+			else
+				if [ "${grepline:0:1}" = "#" ] ; then
+					replaceline "$(escapepath "export PATH=\$PATH:$(dirname $_go)")" "export PATH=\$PATH:$(dirname $_go)" "$(eval echo ~/.bashrc)"
+				fi
+			fi
+			if [ -z "$GOPATH" ] ; then
+				golanghome=$(eval echo ~/.gohome)
+				export GOPATH="$golanghome"
+			else
+				golanghome="$GOPATH"
+			fi
+			export PATH=$PATH:"$golanghome/bin"
+			if ! grepline=$(grep -F "export GOPATH=$golanghome" ~/.bashrc) ; then
+					sed -i -e '$a\' ~/.bashrc
+					echo "export GOPATH=$golanghome" >> ~/.bashrc
+			else
+				if [ "${grepline:0:1}" = "#" ] ; then
+					replaceline "$(escapepath "export GOPATH=$golanghome")" "export GOPATH=$golanghome" "$(eval echo ~/.bashrc)"
+				fi
+			fi
+			if ! grepline=$(grep -F "export PATH=\$PATH:$golanghome/bin" ~/.bashrc) ; then
+					sed -i -e '$a\' ~/.bashrc
+					echo "export PATH=\$PATH:$golanghome/bin" >> ~/.bashrc
+			else
+				if [ "${grepline:0:1}" = "#" ] ; then
+					replaceline "$(escapepath "export PATH=\$PATH:$golanghome/bin")" "export PATH=\$PATH:$golanghome/bin" "$(eval echo ~/.bashrc)"
+				fi
+			fi
+			retval=0;
+		else
+			retval=1;
+		fi
+	fi
+	return $retval;
+}
+
