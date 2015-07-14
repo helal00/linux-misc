@@ -13,8 +13,12 @@
 #You should have received a copy of the GNU General Public License
 #along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-_curdir=$PWD
 _srcsbinpath=$(dirname $(readlink -f $0))
+
+_pathtoadd=$1
+if [ -s "$_pathtoadd" ] ; then
+_pathtoadd=$PWD
+fi
 
 if [ -s "$_srcsbinpath/functions" ] ; then
 	. $_srcsbinpath/functions	
@@ -30,14 +34,14 @@ fi
 
 
 if ! echo $PATH | grep -qo ":$_curdir" ; then
-export PATH=$PATH:$_curdir
+export PATH=$PATH:$_pathtoadd
 fi
 
-if ! _grepline=$(grep -F "export PATH=\$PATH:$_curdir" "$_bashrcfile") ; then
+if ! _grepline=$(grep -F "export PATH=\$PATH:$_pathtoadd" "$_bashrcfile") ; then
 	sed -i -e '$a\' "$_bashrcfile"
-	echo "export PATH=\$PATH:$_curdir" >> "$_bashrcfile"
+	echo "export PATH=\$PATH:$_pathtoadd" >> "$_bashrcfile"
 else
 	if [ "${_grepline:0:1}" = "#" ] ; then
-		replaceline "$(escapepath "export PATH=\$PATH:$_curdir")" "export PATH=\$PATH:$_curdir" "$_bashrcfile"
+		replaceline "$(escapepath "export PATH=\$PATH:$_pathtoadd")" "export PATH=\$PATH:$_pathtoadd" "$_bashrcfile"
 	fi
 fi
