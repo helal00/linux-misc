@@ -27,8 +27,9 @@ if [ ! -f $_srcsbinpath/timeout3 ] ; then
 fi
 
 _userissudo=""
-
+if [ "$USER" != "root" ] ; then
 echo "Please type your sudo password within 15 seconds."
+fi
 if $_srcsbinpath/timeout3 -t 15 sudo echo ; then
 	_userissudo="yes"
 else
