@@ -18,7 +18,7 @@ _sshhost=$1
 _sshuser=$2
 _knownhostfile=$3
 
-if [ -z _knownhostfile ] ; then
+if [ -z "$_knownhostfile" ] ; then
 	if [ -d "$_srcsbinpath/.store" ] ; then
 		_knownhostfile="$_srcsbinpath/.store/knownhost"
 	else
@@ -121,6 +121,7 @@ fi
 if [ $_exit0 -eq 1 ] && [ $_exit1 -eq 1 ] ; then
 	exit 0
 fi
+
 
 
 if [ $_exit0 -eq 0 ] ; then
