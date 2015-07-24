@@ -16,7 +16,7 @@
 _srcsbinpath=$(dirname $(readlink -f $0))
 
 _pathtoadd=$1
-if [ -s "$_pathtoadd" ] ; then
+if [ -z "$_pathtoadd" ] ; then
 _pathtoadd=$PWD
 fi
 
