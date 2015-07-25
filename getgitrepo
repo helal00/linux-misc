@@ -27,6 +27,18 @@ if [ ! -z "$1" ] && [ "${1,,}" = "last" ]; then
 	shift
 fi
 
+_getbranch=""
+if [ ! -z "$1" ] && [ "${1,,}" = "branch" ] ; then
+	if [ ! -z "$2" ] && [ ! -z "$3" ] ; then
+		shift
+		_getbranch="$1"
+		shift
+	else
+		echo "No valid branch given" 1>&2
+		exit 1
+	fi
+fi
+
 if [ -z "$1" ] ; then
 	echo "No url given" 1>&2
 	exit 1
@@ -194,9 +206,15 @@ else
 			rm -rf "$_directory/$_repo"
 		fi
 	fi
-	git clone "$_baseurl"
+	if [ ! -z "$_getbranch" ] ; then
+		_brachname="branch $_getbranch "
+		git clone -b "$_getbranch" "$_baseurl"
+	else
+		git clone "$_baseurl"
+	fi
 	if [ $? -eq 0 ] ; then
-		echo "Fetched $_repo successfully in to $_directory/$_repo"
+		
+		echo "Fetched $_repo ${_brachname}successfully in to $_directory/$_repo"
 	fi
 	cd "$_curdir"
 fi

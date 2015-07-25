@@ -29,10 +29,13 @@ if [ "$1" = "install" ] ; then
 	shift
 fi
 
-if [ -z "$1" ] && [ "${1%%-*}" = "nginx" ]; then
+if [ ! -z "$1" ] && [ "${1%%-*}" = "nginx" ] ; then
 	_pkgtoinstall="$1"
 	shift
+else
+	_pkgtoinstall="nginx-extras"
 fi
+
 
 if [ -s "$_srcsbinpath/functions" ] ; then
 	. $_srcsbinpath/functions	
@@ -80,7 +83,7 @@ fi
 
 if [ -z  "$_noask" ] ; then
 if ls -d "$_compiledir"/nginx-*/ ; then
-	if confirmtogo "we have found a old source folder in $_compiledir. If you didn't make any customization to the source files, you can safely delete those files. Do you want to remove those files for a fresh compile? (yes/press enter only to calcel) :" ; then
+	if confirmtogo "we have found a old source folder in $_compiledir. If you didn't make any customization to the source files, you can safely delete those files. Do you want to remove those files for a fresh compile? (yes/press enter only to calcel) : " ; then
 		_dritodel=$(eval echo "$_compiledir"/nginx-*/)
 		rm -rf "${_dritodel::-1}"
 	fi
@@ -90,7 +93,7 @@ fi
 _curdirectory=$PWD
 _the_ppa="nginx/stable"
 if ! grep -q "$_the_ppa" /etc/apt/sources.list /etc/apt/sources.list.d/*; then
-    add-apt-repository -y -s ppa:nginx/stable
+    add-apt-repository -y -s ppa:$_the_ppa
 fi
 sed -i 's/^#//' /etc/apt/sources.list.d/nginx-stable-trusty.list
 apt-get update
@@ -146,7 +149,7 @@ if [ $_exit -eq 0 ] ; then
 		exit 1
 	fi
 	
-	_nginxpkgfile=$(eval echo "$_compiledir/$_pkgtoinstall_${_nginxversion}*.deb")
+	_nginxpkgfile=$(eval echo "$_compiledir/${_pkgtoinstall}_${_nginxversion}*.deb")
 	if [ ! -f "$_nginxpkgfile" ] ; then
 		echo "There is something wrong, we can't find the file $_nginxpkgfile in $_compiledir" 1>&2
 		exit 1
@@ -172,6 +175,3 @@ else
 fi
 cd "$_curdirectory"
 exit $_exit
-
-
-
