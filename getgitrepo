@@ -72,7 +72,7 @@ _scheme=${_scheme,,}
 _url=${_baseurl#*://}
 #_uparts=($(echo "$_url" | tr "/" " " ))
 strtoarry "$_url" "_uparts" '\/'
-if [ ! -z "$_scheme" ] && [ ${#_uparts[@]} -lt 3 ] ; then
+if [ -z "$_scheme" ] || [ ${#_uparts[@]} -lt 3 ] ; then
 	echo "Incomplete or invalid url given : $_url. Alteast the url should have http(s)://host/user/repo format" 1>&2
 	exit 1
 fi
