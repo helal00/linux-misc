@@ -47,12 +47,14 @@ _baseurl="$1"
 shift
 
 _directory=""
-if [ ! -z "$1" ] && [ -d "${1}" ]; then
-	_directory="$1"
-	shift
-else
-	echo "No such directory: $1 exist." 1>&2
-	exit 1
+if [ ! -z "$1" ] ; then
+	if [ -d "${1}" ] ; then
+		_directory="$1"
+		shift
+	else
+		echo "No such directory: $1 exist." 1>&2
+		exit 1
+	fi
 fi
 
 if [ -s "$_srcsbinpath/functions" ] ; then
@@ -63,12 +65,15 @@ else
 fi
 
 _scheme=${_baseurl%%://*}
+if [ ! -z "$_scheme" ] && [ "$_scheme" = "$_baseurl" ] ; then
+	_scheme=""
+fi
 _scheme=${_scheme,,}
 _url=${_baseurl#*://}
 #_uparts=($(echo "$_url" | tr "/" " " ))
 strtoarry "$_url" "_uparts" '\/'
-if [ ${#_uparts[@]} -lt 3 ] ; then
-	echo "Incomplete url given : $_url. Alteast the url should have http(s)://host/user/repo format" 1>&2
+if [ ! -z "$_scheme" ] && [ ${#_uparts[@]} -lt 3 ] ; then
+	echo "Incomplete or invalid url given : $_url. Alteast the url should have http(s)://host/user/repo format" 1>&2
 	exit 1
 fi
 _host=${_uparts[0]}
