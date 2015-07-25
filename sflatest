@@ -38,12 +38,15 @@ else
 fi
 
 _scheme=${_baseurl%%://*}
+if [ ! -z "$_scheme" ] && [ "$_scheme" = "$_baseurl" ] ; then
+	_scheme=""
+fi
 _scheme=${_scheme,,}
 _url=${_baseurl#*://}
 
 strtoarry "$_url" "_uparts" '\/'
-if [ ${#_uparts[@]} -lt 3 ] ; then
-	echo "Incomplete url given : $_url. Alteast the url should have http(s)://host/projects/repo/ format" 1>&2
+if [ ! -z "$_scheme" ] && [ ${#_uparts[@]} -lt 3 ] ; then
+	echo "Incomplete or invalid url given : $_url. Alteast the url should have http(s)://host/projects/repo/ format" 1>&2
 	exit 1
 fi
 
