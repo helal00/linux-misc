@@ -19,6 +19,13 @@ _install=""
 _pkgtoinstall="nginx-extras"
 _compiledir="/opt/compiledebnginx"
 _modulesdir="custommodules"
+_aptget=$(command -v apt-get)
+
+if [ -z "$_aptget" ] ; then
+	echo "apt-get command not found. This script requires apt-get already installed. e.g. ubuntu or debain" 1>&2
+	exit 1
+fi
+
 if [ "$1" = "noask" ] ; then
 	_noask="noask"
 	shift
@@ -44,7 +51,7 @@ else
 	exit 1
 fi
 
-if [ ! -z "$1" ] ; then
+if [ ! -z "$1" ] && [ "${1%%-*}" != "remove" ] ; then
 	if [ -d "$1" ] ; then
 		_compiledir="$1"
 	else
@@ -62,43 +69,61 @@ if [ ! -z "$1" ] ; then
 			exit 1
 		fi
 	fi
+	shift
+	shift
+fi
+
+_toremove=1
+if [ ! -z "$1" ] && [ "${1%%-*}" = "remove" ] ; then
+_toremove=0
+shift
 fi
 
 mkdir -p "$_compiledir/$_modulesdir"
 apt-get -y install binutils zip unzip rar unrar bzip2 apt-listchanges daemon git software-properties-common dpkg-dev whois curl jq
 if [ -z  "$_noask" ] ; then
-	echo "Please put any custom modules extracted in $_compiledir/$_modulesdir to compile with nginx."
+	echo "	IMPORTANT: Please put any custom modules extracted in $_compiledir/$_modulesdir to compile with nginx."
 	if confirmtogo "...press enter to continue or type quit to compile later: " "quit" ; then
 		exit 0
 	fi
 fi 
-echo "we have found the following directories as to compile as nginx modules in $_compiledir/$_modulesdir: "
+echo "	IMPORTANT: we have found the following directories as to compile as nginx modules in $_compiledir/$_modulesdir: "
 ls -d "$_compiledir/$_modulesdir"/*/
 if [ -z  "$_noask" ] ; then
-	if confirmtogo "Please check all modules directories are listed above. Ensure no module is listed multiple times. Delete those dir to keep only the desired module dir . if ok, press enter or type quit to exit" "quit" ; then
+	if confirmtogo "	IMPORTANT: Please check all modules directories are listed above. Ensure no module is listed multiple times. Delete those dir to keep only the desired module dir . if ok, press enter or type quit to exit: " "quit" ; then
 		exit 0
 	fi 
 fi
 
-
+_dodownload=0
 if [ -z  "$_noask" ] ; then
-if ls -d "$_compiledir"/nginx-*/ ; then
-	if confirmtogo "we have found a old source folder in $_compiledir. If you didn't make any customization to the source files, you can safely delete those files. Do you want to remove those files for a fresh compile? (yes/press enter only to calcel) : " ; then
-		_dritodel=$(eval echo "$_compiledir"/nginx-*/)
-		rm -rf "${_dritodel::-1}"
-	fi
-fi 
+	if ls -d "$_compiledir"/nginx-*/ && [ "$(ls -A "$_compiledir"/nginx-*/)" ] ; then
+		if confirmtogo "	IMPORTANT: we have found a old source folder in $_compiledir. If you didn't make any customization to the source files, you can safely delete those files. Do you want to remove those files for a fresh compile? (yes/press enter only to calcel) : " ; then
+			_dritodel=$(eval echo "$_compiledir"/nginx-*/)
+			rm -rf "${_dritodel::-1}"
+			rm -f $(eval echo "/opt/compiledebnginx/nginx_*.orig.tar.gz") $(eval echo "/opt/compiledebnginx/nginx_*.debian.tar.gz") $(eval echo "/opt/compiledebnginx/nginx_*.dsc")
+		else
+			_dodownload=1
+		fi
+	fi 
 fi
 
 _curdirectory=$PWD
+cd "$_compiledir"
 _the_ppa="nginx/stable"
 if ! grep -q "$_the_ppa" /etc/apt/sources.list /etc/apt/sources.list.d/*; then
     add-apt-repository -y -s ppa:$_the_ppa
 fi
 sed -i 's/^#//' /etc/apt/sources.list.d/nginx-stable-trusty.list
-apt-get update
-cd "$_compiledir"
-apt-get -y source nginx
+if [ "$_dodownload" -eq 0 ] ; then
+	rm -f $(eval echo "/opt/compiledebnginx/nginx_*.orig.tar.gz") $(eval echo "/opt/compiledebnginx/nginx_*.debian.tar.gz") $(eval echo "/opt/compiledebnginx/nginx_*.dsc")
+	apt-get update
+	apt-get -y source nginx
+	if [ $? -ne 0 ] ; then
+		echo "There is some error occured during fetching the source form repo. Please try again." 1>&2
+		exit 1
+	fi
+fi
 _nginxsrcdir=""
 _nginxversion=""
 if ls -d "$_compiledir"/nginx-*/ ; then
@@ -107,17 +132,24 @@ if ls -d "$_compiledir"/nginx-*/ ; then
 	_nginxversion=${_nginxsrcdir/$_compiledir\//}
 	_nginxversion=${_nginxversion#*nginx-}
 else
-	echo "No source folder we can detect in $_compiledir, exiting..."
+	echo "No source folder we can detect in $_compiledir, exiting..." 1>&2
 	exit 1
 fi
 
-if [ -z  "$_noask" ] ; then
-if confirmtogo "We have downaloded nginx version: $_nginxversion source and ready to start compile. Press enter only to continue or type quit to compile later: " "quit" ; then
-	exit 0
+
+if [ ! -s "$_nginxsrcdir/debian/rules" ] ; then
+	echo "	IMPORTANT: Couldn't found some required files and folders in the source folder: $_nginxsrcdir . The source files might have been corrupted. Please run this script again and choose to remove all old files and folder for a fresh compile" 1>&2
+	exit 1
 fi
-fi
+
 apt-get -y build-dep nginx
-sed -i '/--add-module=$(MODULESDIR)\/nginx-http-push/d' "$_nginxsrcdir/debian/rules"
+if [ "$_toremove" -eq 0 ] ; then
+	for _rmtext in "$@"
+	do
+		sed -i "/$(escapepath "$_rmtext")/d" "$_nginxsrcdir/debian/rules"
+	done
+fi
+
 _strinc=""
 for _dr in $(ls -d "$_compiledir/$_modulesdir"/*/)
 do
@@ -138,28 +170,43 @@ sed -i "/$_ln\$/a $_strinc" "$_nginxsrcdir/debian/rules"
 sed -i '/'"$_ln"'$/ s/$/ \\/' "$_nginxsrcdir/debian/rules"
 done 
 cd "$_nginxsrcdir"
+
+if [ -z  "$_noask" ] ; then
+	if [ "$_dodownload" -eq 0 ] ; then
+		if confirmtogo "	IMPORTANT: We have downaloded nginx version: $_nginxversion source and ready to start compile. Press enter only to continue or type quit to compile later: " "quit" ; then
+			cd "$_curdirectory"
+			exit 0
+		fi
+	else
+		if confirmtogo "	IMPORTANT: We have found nginx version: $_nginxversion source and ready to start compile. Press enter only to continue or type quit to compile later: " "quit" ; then
+			cd "$_curdirectory"
+			exit 0
+		fi
+	fi
+fi
+
 sudo dpkg-buildpackage -b
 _exit=$?
 if [ $_exit -eq 0 ] ; then
-	echo "Nginx compile successful." 1>&2
+	echo "Nginx compile successful."
 	
 	_nginxcommonfile=$(eval echo "$_compiledir/nginx-common_${_nginxversion}*_all.deb")
 	if [ ! -f "$_nginxcommonfile" ] ; then
 		echo "There is something wrong, we can't find the file $_nginxcommonfile in $_compiledir" 1>&2
+		cd "$_curdirectory"
 		exit 1
 	fi
 	
 	_nginxpkgfile=$(eval echo "$_compiledir/${_pkgtoinstall}_${_nginxversion}*.deb")
 	if [ ! -f "$_nginxpkgfile" ] ; then
 		echo "There is something wrong, we can't find the file $_nginxpkgfile in $_compiledir" 1>&2
+		cd "$_curdirectory"
 		exit 1
 	fi
 	
 	_installed=1
 	if [ -z  "$_noask" ] ; then
-		read -p "Do you want to install the compiled nginx package: $_pkgtoinstall? (yes/no)" _conitnue
-		_conitnue=${_conitnue,,}
-		if [ ! -z "$_conitnue" ] && [ "$_conitnue" = "yes" ] ; then
+		if confirmtogo "	IMPORTANT: Do you want to install the compiled nginx package: $_pkgtoinstall? (yes/enter only to cancel): " ; then
 			cd "$_compiledir"
 			sudo dpkg --install "$_nginxcommonfile" "$_nginxpkgfile" && nginx -V && apt-mark hold "$_pkgtoinstall"
 			_installed=0
@@ -169,7 +216,7 @@ if [ $_exit -eq 0 ] ; then
 		cd "$_compiledir"
 		sudo dpkg --install "$_nginxcommonfile" "$_nginxpkgfile" && nginx -V && apt-mark hold "$_pkgtoinstall"
 	fi
-	echo "you can find all the compiled .deb(s) file(s) under $_compiledir" 1>&2
+	echo "	INFORMATION: you can find all the compiled .deb(s) file(s) under $_compiledir" 1>&2
 else
 	echo "Nginx compile not successful." 1>&2
 fi
