@@ -15,7 +15,10 @@
 
 _srcsbinpath=$(dirname $(readlink -f $0))
 
+if [ -d "$1" ] ; then
 _pathtoadd=$1
+shift
+fi
 if [ -z "$_pathtoadd" ] ; then
 _pathtoadd=$PWD
 fi
@@ -27,7 +30,11 @@ else
 	exit 1
 fi
 
+if [ -s "$(eval echo $1)" ] ; then
 _bashrcfile="$(eval echo $1)"
+shift
+fi
+
 if [ -z "$_bashrcfile" ] ; then
 	_bashrcfile="$(eval echo ~/.bashrc)"
 fi
