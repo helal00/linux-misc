@@ -35,6 +35,18 @@
 	#return 0
 #}
 
+if _bashloc=$(command -v bash) && _head=$(command -v head) && _awk=$(command -v awk) ; then
+	_verline=$($_bashloc --version | $_head -1)
+	_ver=$(echo ${_verline#*version } | $_awk -F. '{print $1}')
+	if [ "$_ver" -lt 4 ] ; then
+		echo "This script requires minimum bash version 4, but you have $_verline . ...aborting..." 1>&2
+		exit 1
+	fi
+else
+	echo "bash or head or awk command not found in your system. ...aborting..." 1>&2
+	exit 1
+fi
+
 function trimStr(){
 	local _deli _deli2 _strtotrim
 	if [ "$#" -eq 0 ] ; then
@@ -103,9 +115,9 @@ function confirmtogo(){
 
 #strtoarry "$_url" "_uparts" '\/'
 function strtoarry(){
-	local _str _retarray _deli _c _l;_str=$1 _retarray=$2 _deli=$3
+	local _str _retarray _deli _c _l;_str="$1" _retarray=$2 _deli=$3
 	eval unset $_retarray
-	_c=-1;while read -r _l; do _c=$((_c+1));eval $_retarray[$_c]='$_l';done <<< "$(echo $_str | sed -e "s/$_deli/\n/g")"
+	_c=-1;while read -r _l; do _c=$((_c+1));eval $_retarray[$_c]='$_l';done <<< "$(echo "$_str" | sed -e "s/$_deli/\n/g")"
 }
 
 
