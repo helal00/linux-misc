@@ -67,8 +67,12 @@ function trimStr(){
 		shift
 		_strtotrim="$*"
 	fi
-	_strtotrim="${_strtotrim/#$_deli}"
-	_strtotrim="${_strtotrim/%$_deli2}"
+	while [ "${_strtotrim:0:1}" = "$_deli"  ] ; do 
+		_strtotrim="${_strtotrim/#$_deli}"
+	done
+	while [ "${_strtotrim:(-1):1}" = "$_deli2"  ] ; do 
+		_strtotrim="${_strtotrim/%$_deli2}"
+	done
 	echo "$_strtotrim"
 }
 
