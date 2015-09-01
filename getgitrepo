@@ -39,6 +39,18 @@ if [ ! -z "$1" ] && [ "${1,,}" = "branch" ] ; then
 	fi
 fi
 
+_getrelease=""
+if [ ! -z "$1" ] && [ "${1,,}" = "release" ] ; then
+	if [ ! -z "$2" ] && [ ! -z "$3" ] ; then
+		shift
+		_getrelease="$1"
+		shift
+	else
+		echo "No valid release tag number given" 1>&2
+		exit 1
+	fi
+fi
+
 if [ -z "$1" ] ; then
 	echo "No url given" 1>&2
 	exit 1
@@ -110,16 +122,24 @@ do
 	fi
 done
 
-if [ "$_getlatestrelease" = "yes" ] ; then
+if [ "$_getlatestrelease" = "yes" ] || [ ! -z "$_getrelease" ] ; then
 	_tempdirectory="/tmp/repostest"
 	mkdir -p "$_tempdirectory/archive"
 	mkdir -p "$_tempdirectory/output"
 	cd "$_tempdirectory"
 	_latestTag=""
 	if [ "$_host" = "github.com" ] ; then
-		_latestTag=$("$_srcsbinpath/githublatest" "$_baseurl")
+		if [ -z "$_getrelease" ] ; then
+			_latestTag=$("$_srcsbinpath/githublatest" "$_baseurl")
+		else
+			_latestTag="$_getrelease"
+		fi
 		if [ ! -z "$_latestTag" ] ; then
 			wget -q --no-check-certificate "$_baseurl/archive/${_latestTag}.tar.gz" --directory-prefix="$_tempdirectory/archive/"
+			if [ "$?" -ne 0 ] ; then
+				echo "There is some error downloading from $_baseurl/archive/${_latestTag}.tar.gz ...aborting" 1>&2
+				exit 1
+			fi
 		fi
 	fi
 
@@ -127,7 +147,12 @@ if [ "$_getlatestrelease" = "yes" ] ; then
 		git clone "$_baseurl"
 		if [ $? -eq 0 ] ; then
 			cd "$_repo"
-			_latestTag=$(git describe --tags $(git rev-list --tags --max-count=1 2>/dev/null) 2>/dev/null)
+			if [ -z "$_getrelease" ] ; then
+				_latestTag=$(git describe --tags $(git rev-list --tags --max-count=1 2>/dev/null) 2>/dev/null)
+			else
+				_latestTag="$_getrelease"
+			fi
+			
 			if [ -z "$_latestTag" ] ; then
 				echo "No latest tag found. May be, this repo doesn't have any tags. Moving the cloned repo to $_directory" 1>&2
 				if [ -d $_directory/$_repo ] ; then
@@ -151,7 +176,14 @@ if [ "$_getlatestrelease" = "yes" ] ; then
 				exit 0
 			else
 				git archive -o "$_tempdirectory/archive"/${_latestTag}.tar.gz --prefix=${_repo}-${_latestTag}/ ${_latestTag}
+				if [ "$?" -ne 0 ] ; then
+					echo "There is some error retriving archive of relese ${_latestTag} from cloned git repo. The release tag might not availbale ...aborting" 1>&2
+					exit 1
+				fi
 			fi
+		else
+			echo "There is some error cloning git from $_baseurl ...aborting" 1>&2
+			exit 1
 		fi
 	fi
 	

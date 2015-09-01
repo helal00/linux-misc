@@ -26,12 +26,12 @@ if [ -z "$_aptget" ] ; then
 	exit 1
 fi
 
-if [ "$1" = "noask" ] ; then
+if [ "${1,,}" = "noask" ] ; then
 	_noask="noask"
 	shift
 fi
 
-if [ "$1" = "install" ] ; then
+if [ "${1,,}" = "install" ] ; then
 	_install="install"
 	shift
 fi
