@@ -23,9 +23,10 @@ _noautomod=""
 #_pkgtoinstall="nginx-extras"
 _compiledir="/opt/compiledebnginx"
 _modulesdir="custommodules"
+_others="others"
 _yum=$(command -v yum)
 
-if [ -z "$_aptget" ] ; then
+if [ -z "$_yum" ] ; then
 	echo "yum command not found. This script requires yum already installed. e.g. Fedora, Centos" 1>&2
 	exit 1
 fi
@@ -44,9 +45,17 @@ if [ "${1,,}" = "noautomod" ] ; then
 	_noautomod="noautomod"
 	shift
 fi
+ 	
 
 if [ "${1,,}" = "version" ] && [ ! -z "$2" ]; then
 	_version="$2"
+	if [ ${#_version} -eq 5 ] ; then
+		_version="release-$_version"
+	fi
+	if [ ${#_version} -ne 13 ] || [ ${_version:0:8} != "release-" ]; then
+		echo "Invalid version number, e.g. '1.9.2' or 'release-1.9.2'" 1>&2
+		exit 1
+	fi
 	shift
 	shift
 fi
@@ -62,6 +71,8 @@ if [ "${1,,}" = "configure" ] && [ ! -z "$2" ]; then
 	shift
 	shift
 fi
+
+
 
 if [ -s "$_srcsbinpath/functions" ] ; then
 	. $_srcsbinpath/functions	
@@ -80,7 +91,7 @@ if [ ! -s "$_srcsbinpath/getgitrepo" ] ; then
 	exit 1
 fi
 
-if [ ! -z "$1" ] ; then
+if [ ! -z "$1" ] &&  [ "${1,,}" != "remove" ]; then
 	if [ -d "$1" ] ; then
 		_compiledir="$1"
 	else
@@ -103,15 +114,14 @@ if [ ! -z "$1" ] ; then
 fi
 
 _toremove=1
-if [ ! -z "$1" ] && [ "${1%%-*}" = "remove" ] ; then
+if [ "${1,,}" = "remove" ]; then
 _toremove=0
 shift
 fi
 
+
+
 mkdir -p "$_compiledir/$_modulesdir"
-
-$_yum -y install gcc gcc-c++ make zlib-devel pcre-devel openssl-devel wget zip unzip rar unrar bzip2 git curl
-
 if [ -z  "$_noask" ] ; then
 	echo "	IMPORTANT: Please put any custom modules extracted in $_compiledir/$_modulesdir to compile with nginx."
 	if confirmtogo "...press enter to continue or type quit to compile later: " "quit" ; then
@@ -119,31 +129,38 @@ if [ -z  "$_noask" ] ; then
 	fi
 fi 
 
-echo "	IMPORTANT: we have found the following directories as to compile as nginx modules in $_compiledir/$_modulesdir: "
-ls -d "$_compiledir/$_modulesdir"/*/
-if [ -z  "$_noask" ] ; then
-	if confirmtogo "	IMPORTANT: Please check all modules directories are listed above. Ensure no module is listed multiple times. Delete those dir to keep only the desired module dir . if ok, press enter or type quit to exit: " "quit" ; then
-		exit 0
-	fi 
-fi
+$_yum -y install gcc gcc-c++ make zlib-devel pcre-devel openssl-devel wget zip unzip rar unrar bzip2 git curl libxml2 libxslt libxml2-devel libxslt-devel gd gd-devel perl-ExtUtils-Embed geoip geoip-devel pam pam-devel expat expat-devel
 
 _dodownload=0
+if [ -z "$_version" ] ; then
+		_version=$($_srcsbinpath/githublatest https://github.com/nginx/nginx)
+fi
 if [ -z  "$_noask" ] ; then
-	if ls -d "$_compiledir"/nginx-*/ && [ "$(ls -A "$_compiledir"/nginx-*/)" ] ; then
-		if confirmtogo "	IMPORTANT: we have found a old source folder in $_compiledir. If you didn't make any customization to the source files, you can safely delete those files. Do you want to remove those files for a fresh compile? (yes/press enter only to calcel) : " ; then
-			_dritodel=$(eval echo "$_compiledir"/nginx-*/)
-			rm -rf "${_dritodel::-1}"
+	if ls -d "$_compiledir"/nginx-*/ 2>/dev/null && [ "$(ls -A "$_compiledir"/nginx-*/)" ] ; then
+		_nginxsrcdir=$(eval echo "$_compiledir"/nginx-*/)
+		_nginxsrcdir=$(rmlastchar $_nginxsrcdir)
+		_nginxversion=${_nginxsrcdir/$_compiledir\//}
+		_nginxversion=${_nginxversion#*nginx-}
+		if [ "$_nginxversion" != "$_version" ] ; then
+			if confirmtogo "	IMPORTANT: we have found a old source folder $_nginxsrcdir which is not your requested version '$_version' as we detected. Are you want to remove this directory ? (yes/press enter only to calcel) : " ; then
+				rm -rf "$_nginxsrcdir"
+			else
+				echo "Please remove or move the directory $_nginxsrcdir to continue further." 1>&2
+				exit 1
+			fi
 		else
-			_dodownload=1
+			if confirmtogo "	IMPORTANT: we have found a old source folder $_nginxsrcdir which is same as your requested version '$_version' as we detected. If you didn't make any customization to the files of this directory, you can safely delete it. Do you want to remove those files for a fresh compile or keep the ? ('yes' to delete this dir / press enter only to keep) : " ; then
+				rm -rf "$_nginxsrcdir"
+			else
+				_dodownload=1
+			fi
 		fi
+		
 	fi 
 fi
 
 
 if [ "$_dodownload" -eq 0 ] ; then
-	if [ -z "$_version" ] ; then
-		_version=$($_srcsbinpath/githublatest https://github.com/nginx/nginx)
-	fi
 	$_srcsbinpath/getgitrepo "release" "$_version" "https://github.com/nginx/nginx" "$_compiledir"
 	if [ $? -ne 0 ] ; then
 		echo "There is some error occured during fetching the source form https://github.com/nginx/nginx. Please try again." 1>&2
@@ -153,9 +170,9 @@ fi
 
 _nginxsrcdir=""
 _nginxversion=""
-if ls -d "$_compiledir"/nginx-*/ ; then
+if ls -d "$_compiledir"/nginx*/ 2>/dev/null ; then
 	_nginxsrcdir=$(eval echo "$_compiledir"/nginx-*/)
-	_nginxsrcdir=${_nginxsrcdir::-1}
+	_nginxsrcdir=$(rmlastchar $_nginxsrcdir)
 	_nginxversion=${_nginxsrcdir/$_compiledir\//}
 	_nginxversion=${_nginxversion#*nginx-}
 else
@@ -163,11 +180,22 @@ else
 	exit 1
 fi
 
+if [ ! -s "$_nginxsrcdir/configure" ] ; then
+	if [ -s "$_nginxsrcdir/auto/configure" ] ; then
+		cp "$_nginxsrcdir/auto/configure" "$_nginxsrcdir/"
+		chmod +x "$_nginxsrcdir/configure"
+	else
+		echo "we can't find configure in $_nginxsrcdir, exiting..." 1>&2
+		exit 1
+	fi
+fi
+
+
 _curdirectory=$PWD
 cd "$_compiledir"
 
 if [ -z "$_configure" ] ; then
-_configure="./configure --with-cc-opt='-O2 -g -pipe -Wp,-D_FORTIFY_SOURCE=2 -fexceptions -fstack-protector --param=ssp-buffer-size=4 -m64 -mtune=generic' --prefix=/etc/nginx --conf-path=/etc/nginx/nginx.conf --http-log-path=/var/log/nginx/access.log --error-log-path=/var/log/nginx/error.log --lock-path=/var/run/nginx.lock --pid-path=/var/run/nginx.pid --http-client-body-temp-path=/var/cache/nginx/client_temp --http-fastcgi-temp-path=/var/cache/nginx/fastcgi_temp --http-proxy-temp-path=/var/cache/nginx/proxy_temp --http-scgi-temp-path=/var/cache/nginx/scgi_temp --http-uwsgi-temp-path=/var/cache/nginx/uwsgi_temp --user=nginx --group=nginx --with-debug --with-pcre-jit --with-ipv6 --with-http_ssl_module --with-http_stub_status_module --with-http_realip_module --with-http_auth_request_module --with-http_addition_module --with-http_dav_module --with-http_flv_module --with-http_geoip_module --with-http_gunzip_module --with-http_gzip_static_module --with-http_image_filter_module --with-http_mp4_module --with-http_perl_module --with-http_random_index_module --with-http_secure_link_module --with-http_spdy_module --with-http_sub_module --with-http_xslt_module --with-mail --with-mail_ssl_module --with-file-aio"
+_configure="./configure --prefix=/etc/nginx --sbin-path=/usr/sbin/nginx --conf-path=/etc/nginx/nginx.conf --http-log-path=/var/log/nginx/access.log --error-log-path=/var/log/nginx/error.log --lock-path=/var/run/nginx.lock --pid-path=/var/run/nginx.pid --http-client-body-temp-path=/var/cache/nginx/client_temp --http-fastcgi-temp-path=/var/cache/nginx/fastcgi_temp --http-proxy-temp-path=/var/cache/nginx/proxy_temp --http-scgi-temp-path=/var/cache/nginx/scgi_temp --http-uwsgi-temp-path=/var/cache/nginx/uwsgi_temp --user=nginx --group=nginx --with-debug --with-pcre-jit --with-ipv6 --with-http_ssl_module --with-http_stub_status_module --with-http_realip_module --with-http_auth_request_module --with-http_addition_module --with-http_dav_module --with-http_flv_module --with-http_geoip_module --with-http_gunzip_module --with-http_gzip_static_module --with-http_image_filter_module --with-http_mp4_module --with-http_perl_module --with-http_random_index_module --with-http_secure_link_module --with-http_spdy_module --with-http_sub_module --with-http_xslt_module --with-mail --with-mail_ssl_module --with-file-aio"
 else
 	if [ ${_configure:0:12} != "./configure " ] ; then
 		_configure = "./configure $_configure"
@@ -177,7 +205,7 @@ fi
 if [ -z  "$_noask" ] ; then
 	echo "IMPORTANT: The ./configure command we build so for nginx basic options is:"
 	echo "$_configure"
-	if ! confirmtogo "	IMPORTANT: Is the above line conatins your expected configure options for nginx without custom modules we are going to add later? (yes/only enter to quit): " ; then
+	if confirmtogo "	IMPORTANT: Is the above line conatins your expected configure options for nginx without custom modules we are going to add later? (press enter to continue/type 'quit' to quit): " ; then
 		cd "$_curdirectory"
 		exit 0
 	fi
@@ -188,35 +216,46 @@ if [ -z "$_noautomod" ] ; then
 	if [ -z "$_ppasource" ] ; then
 	_ppasource="https://launchpad.net/~nginx/+archive/ubuntu/stable/+files/nginx_1.8.0-1%2Btrusty1.debian.tar.gz"
 	fi
-	_tempdirectory="/tmp/ppaautomodule"
-	mkdir -p "$_tempdirectory/archive"
-	mkdir -p "$_tempdirectory/output"
-	wget -q --no-check-certificate "$_ppasource" --directory-prefix="$_tempdirectory/archive/"
-	_tarres="$?"
-	_nginxppatarfile=$(eval echo "$_tempdirectory/archive"/nginx-*/)
-	if [ "$_tarres" -ne 0 ] || [ -z "$_nginxppatarfile" ]; then
+	_othersdirectory="$_compiledir/$_others"
+	rm -rf "$_othersdirectory/outputs"
+	mkdir -p "$_othersdirectory/archives"
+	mkdir -p "$_othersdirectory/outputs"
+	_ppatarfile=${_ppasource##*\/}
+	_ppatarfile=$(printf ${_ppatarfile//\%/\\x})
+	_nginxppatarfile="$_othersdirectory/archives/$_ppatarfile"
+	if [ ! -s "$_nginxppatarfile" ] ; then
+		wget -q --no-check-certificate "$_ppasource" --directory-prefix="$_othersdirectory/archives/"
+		_tarres="$?"
+	else
+		_tarres=0
+	fi
+	#_nginxppatarfile=$(eval echo "$_othersdirectory/archives"/nginx*)
+	
+	if [ "$_tarres" -ne 0 ] || [ ! -s "$_nginxppatarfile" ]; then
 		if [ -z  "$_noask" ] ; then
 			if confirmtogo "	INFORMATION: There is some error downloading modules from $_ppasource. No extra default modules will be available, you want to continue? (press enter only to continue/type 'quit' to quit) : " "quit" ; then
+				rm -rf "$_nginxppatarfile"
 				exit 0
 			fi
 		fi
 	else
-		tar -xzf "$_tempdirectory/archive/$_nginxppatarfile" -C "$_tempdirectory/output"
+		tar -xzf "$_nginxppatarfile" -C "$_othersdirectory/outputs"
 		_tarres="$?"
-		_nginxppadir=$(eval echo "$_tempdirectory/output"/nginx-*/)
-		if [ "$_tarres" -ne 0 ] || [ -z "$_nginxppadir" ]; then
+		_nginxppadir="$_othersdirectory/outputs/debian"
+		if [ "$_tarres" -ne 0 ] || [ ! -d "$_nginxppadir" ]; then
 			if [ -z  "$_noask" ] ; then
 				if confirmtogo "	INFORMATION: There is some error extractng modules from $_nginxppatarfile. No extra default modules will be available, you want to continue? (press enter only to continue/type 'quit' to quit) : " "quit" ; then
+					rm -rf "$_nginxppatarfile" "$_nginxppadir"
 					exit 0
 				fi
 			fi
 		else
-			for _moddir in $(ls -ld "$_nginxppadir/debian/modules"/*/)
+			for _moddir in $(ls -d "$_nginxppadir/modules"/*/)
 			do
-				_moddir=${_moddir::-1}
+				_moddir=$(rmlastchar $_moddir)
 				_moddir=${_moddir##*\/}
 				if [ ! -d "$_compiledir/$_modulesdir/$_moddir" ] ; then
-					mv "$_nginxppadir/debian/modules/$_moddir" "$_compiledir/$_modulesdir/"
+					mv "$_nginxppadir/modules/$_moddir" "$_compiledir/$_modulesdir/"
 				fi
 			done
 			if [ "$_toremove" -eq 0 ] ; then
@@ -229,12 +268,71 @@ if [ -z "$_noautomod" ] ; then
 	fi
 fi
 
-rm -rf "$_tempdirectory"
+rm -rf "$_nginxppadir"
+
+$_nginxlua=$(eval echo "$_compiledir/$_modulesdir"/nginx-lua*)
+$_luanginx=$(eval echo "$_compiledir/$_modulesdir"/lua-nginx*)
+
+if [ "$_nginxlua" != "$_compiledir/$_modulesdir/nginx-lua*" ] || [ "$_luanginx" != "$_compiledir/$_modulesdir/lua-nginx*" ] ; then
+	_luajit=$(command -v luajit)
+	_luajitversion="luajit-2.0"
+	if [ -z "$_luajit" ] ; then
+		if [ ! -d /usr/local/lib/lua ]; then
+			_luajit=""
+		else
+			if [ ! -d /usr/local/include/luajit-2.0 ] ; then
+				if [ ! -d /usr/local/include/luajit-2.1 ] ; then
+					_luajit=""
+				else
+					_luajitversion="luajit-2.1"
+				fi
+			fi 
+		fi
+	fi
+	
+	if [ -z "$_luajit" ] ; then
+		if [ -d "$_othersdirectory/luajit-2.0" ] ; then
+			cd "$_othersdirectory/luajit-2.0"
+			git pull
+		else
+			cd "$_othersdirectory"
+			git clone http://luajit.org/git/luajit-2.0.git
+			if [ $? -eq 0 ] ; then
+				cd "$_othersdirectory/luajit-2.0"
+			else
+				echo "luajit can't be cloned from http://luajit.org/git/luajit-2.0.git" 1>&2
+				exit 1
+			fi
+		fi
+		make
+		if [ $? -ne 0 ] ; then
+			echo "luajit can't be build" 1>&2
+			exit 1
+		fi
+		make install
+	fi
+	
+	export LUAJIT_LIB=/usr/local/lib/
+	export LUAJIT_INC=/usr/local/include/$_luajitversion/
+	_configure="$_configure --with-ld-opt='-Wl,-rpath,/usr/local/lib'"
+fi
+
+if [ -z "$_noautomod" ] ; then
+	echo "	IMPORTANT: we have found the following module directory (some of them is downloaded by us) as to compile as nginx modules in $_compiledir/$_modulesdir: "
+else
+	echo "	IMPORTANT: we have found the following module directory as to compile as nginx modules in $_compiledir/$_modulesdir: "
+fi
+ls -d "$_compiledir/$_modulesdir"/*/ 2>/dev/null
+if [ -z  "$_noask" ] ; then
+	if confirmtogo "	IMPORTANT: Please check all modules directories are listed above. Ensure no module is listed multiple times. Delete any dir to keep only the desired modules. if ok, press enter to continue or type quit to compile later: " "quit" ; then
+		exit 0
+	fi 
+fi
 
 _strinc=""
 for _dr in $(ls -d "$_compiledir/$_modulesdir"/*/)
 do
-	_dr=${_dr::-1}
+	_dr=$(rmlastchar $_dr)
 	if [ -z "$_strinc" ] ; then
 		_strinc="--add-module=$_dr" 
 	else
@@ -245,24 +343,36 @@ _configure="$_configure $_strinc"
 cd "$_nginxsrcdir"
 
 if [ -z  "$_noask" ] ; then
+	echo "	IMPORTANT: The final configure options:"
+	echo "$_configure" 
 	if [ "$_dodownload" -eq 0 ] ; then
-		if confirmtogo "	IMPORTANT: We have downaloded nginx version: $_nginxversion source and ready to start compile. Here is the final configure options: $_configure . If ok, Press enter only to continue or type quit to compile later: " "quit" ; then
+		if confirmtogo "	IMPORTANT: We have downaloded nginx version: $_nginxversion source and ready to start compile. Please check above the final configure options . If ok, Press enter only to continue or type quit to compile later: " "quit" ; then
 			cd "$_curdirectory"
 			exit 0
 		fi
 	else
-		if confirmtogo "	IMPORTANT: We have found nginx version: $_nginxversion source and ready to start compile. Here is the final configure options: $_configure . If ok, Press enter only to continue or type quit to compile later: " "quit" ; then
+		if confirmtogo "	IMPORTANT: We have found nginx version: $_nginxversion source and ready to start compile. Please check above the final configure options. If ok, Press enter only to continue or type quit to compile later: " "quit" ; then
 			cd "$_curdirectory"
 			exit 0
 		fi
 	fi
 fi
+echo "$PWD"
 
-make
+$_configure
+
+if [ $? -eq 0 ] ; then
+	echo "Nginx configure was successful." 1>&2
+else
+	echo "Nginx configure not successful." 1>&2
+	exit 1
+fi
+
+make -j2
 _exit=$?
 
 if [ $_exit -eq 0 ] ; then
-	echo "Nginx compile successful."
+	echo "Nginx compile was successful."
 	
 	
 	_installed=1
@@ -276,7 +386,7 @@ if [ $_exit -eq 0 ] ; then
 		make install
 	fi
 else
-	echo "Nginx compile not successful." 1>&2
+	echo "Nginx compile was not successful." 1>&2
 fi
 
 cd "$_curdirectory"

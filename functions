@@ -47,6 +47,22 @@ else
 	exit 1
 fi
 
+function rmlastchar(){
+	local _str _count _till
+	if [ "$#" -eq 0 ] ; then
+		return 1
+	elif [ "$#" -eq 1 ] ; then
+		_str="$1"
+		_count=1
+	elif [ "$#" -eq 2 ] ; then
+		_str="$1"
+		_count="$2"
+	fi
+	_till=${#_str}
+	_till=$((_till-_count))
+	echo ${_str::$_till}
+}
+
 function trimStr(){
 	local _deli _deli2 _strtotrim
 	if [ "$#" -eq 0 ] ; then

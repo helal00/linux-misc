@@ -100,7 +100,7 @@ if [ -z  "$_noask" ] ; then
 	if ls -d "$_compiledir"/nginx-*/ && [ "$(ls -A "$_compiledir"/nginx-*/)" ] ; then
 		if confirmtogo "	IMPORTANT: we have found a old source folder in $_compiledir. If you didn't make any customization to the source files, you can safely delete those files. Do you want to remove those files for a fresh compile? (yes/press enter only to calcel) : " ; then
 			_dritodel=$(eval echo "$_compiledir"/nginx-*/)
-			rm -rf "${_dritodel::-1}"
+			rm -rf "$(rmlastchar $_dritodel)" 
 			rm -f $(eval echo "/opt/compiledebnginx/nginx_*.orig.tar.gz") $(eval echo "/opt/compiledebnginx/nginx_*.debian.tar.gz") $(eval echo "/opt/compiledebnginx/nginx_*.dsc")
 		else
 			_dodownload=1
@@ -128,7 +128,7 @@ _nginxsrcdir=""
 _nginxversion=""
 if ls -d "$_compiledir"/nginx-*/ ; then
 	_nginxsrcdir=$(eval echo "$_compiledir"/nginx-*/)
-	_nginxsrcdir=${_nginxsrcdir::-1}
+	_nginxsrcdir=$(rmlastchar $_nginxsrcdir)
 	_nginxversion=${_nginxsrcdir/$_compiledir\//}
 	_nginxversion=${_nginxversion#*nginx-}
 else
@@ -153,7 +153,7 @@ fi
 _strinc=""
 for _dr in $(ls -d "$_compiledir/$_modulesdir"/*/)
 do
-_dr=${_dr::-1}
+_dr=$(rmlastchar $_dr)
 if [ -z "$_strinc" ] ; then
 _cur="\\\t\t\t--add-module=$_dr \\\\\\n"
 else
@@ -161,7 +161,7 @@ _cur="\t\t\t--add-module=$_dr \\\\\\n"
 fi
 _strinc="$_strinc $_cur"
 done
-_strinc=$(echo "${_strinc::-4}")
+_strinc=$(echo "$(rmlastchar "$_strinc" 4)")
 for _ln in $(grep \\-\\-add-module=[^\\]*$ "$_nginxsrcdir/debian/rules" | uniq)
 do
 _ln=${_ln////\\/}

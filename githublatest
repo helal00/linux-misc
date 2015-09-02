@@ -61,9 +61,10 @@ _finalbaseurl="$_scheme://$_host/$_user/$_repo/releases"
 _thepat="\"\/.*\/.*\/releases\/tag\/.*\""
 _latestTag=$(wget -qO - "$_finalbaseurl" | grep -o $_thepat | head -1 | awk -F"/" '{print $NF}')
 if [ ! -z "$_latestTag" ] ; then
-	_latestTag=${_latestTag::-1}
+	#_latestTag=${_latestTag::${#_latestTag}-1}
+	_latestTag=$(rmlastchar "$_latestTag")
 	_dlurl="$_scheme://$_host/$_user/$_repo/archive/${_latestTag}.tar.gz"
-	#echo "$_latestTag"
+	#echo "${_latestTag}"
 	#printf "${_latestTag//\%/\\x}"
 	if [ -z "$_geturl" ] || [ ! -z "$_getboth" ] ; then
 		printf "${_latestTag//\%/\\x}\n"
