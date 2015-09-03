@@ -90,7 +90,7 @@ fi
 echo "	IMPORTANT: we have found the following directories as to compile as nginx modules in $_compiledir/$_modulesdir: "
 ls -d "$_compiledir/$_modulesdir"/*/
 if [ -z  "$_noask" ] ; then
-	if confirmtogo "	IMPORTANT: Please check all modules directories are listed above. Ensure no module is listed multiple times. Delete those dir to keep only the desired module dir . if ok, press enter or type quit to exit: " "quit" ; then
+	if confirmtogo "	IMPORTANT: Please check all modules directories are listed above and all their prerequisites are installed already as per modules provider's instruction. Ensure no module is listed multiple times. if ok, press enter to continue or type 'quit' to compile later: " "quit" ; then
 		exit 0
 	fi 
 fi

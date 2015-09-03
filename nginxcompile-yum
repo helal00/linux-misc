@@ -27,7 +27,7 @@ _others="others"
 _yum=$(command -v yum)
 
 if [ -z "$_yum" ] ; then
-	echo "yum command not found. This script requires yum already installed. e.g. Fedora, Centos" 1>&2
+	echo "yum command not found. This script requires yum already installed. e.g. Fedora, Centos, RHEL" 1>&2
 	exit 1
 fi
 
@@ -86,6 +86,11 @@ if [ ! -s "$_srcsbinpath/githublatest" ] ; then
 	exit 1
 fi
 
+if [ ! -s "$_srcsbinpath/sflatest" ] ; then
+	echo "$_srcsbinpath/sflatest file not found!" 1>&2
+	exit 1
+fi
+
 if [ ! -s "$_srcsbinpath/getgitrepo" ] ; then
 	echo "$_srcsbinpath/getgitrepo file not found!" 1>&2
 	exit 1
@@ -114,26 +119,49 @@ if [ ! -z "$1" ] &&  [ "${1,,}" != "remove" ]; then
 fi
 
 _toremove=1
-if [ "${1,,}" = "remove" ]; then
+if [ "${1,,}" = "remove" ]; then $releasever
 _toremove=0
 shift
 fi
 
 
+if [ ! -s "/etc/yum.repos.d/nginx.repo" ] || [ -z "$(command -v nginx)" ] ; then
+_osname=$(getosname)
+if [ "$_osname" != "centos" ] ; then
+	_osname="rhel"
+fi
+cat > /etc/yum.repos.d/nginx.repo <<-EOL
+[nginx]
+name=nginx repo
+baseurl=http://nginx.org/packages/$_osname/\$releasever/\$basearch/
+gpgcheck=0
+enabled=1
+EOL
+yum -y install nginx
+fi
 
 mkdir -p "$_compiledir/$_modulesdir"
 if [ -z  "$_noask" ] ; then
 	echo "	IMPORTANT: Please put any custom modules extracted in $_compiledir/$_modulesdir to compile with nginx."
-	if confirmtogo "...press enter to continue or type quit to compile later: " "quit" ; then
+	echo "	For repository from github or other online gits you can use our getgitrepo ulility like '$_srcsbinpath/getgitrepo last/branch branchname/release(tag) release(tag)_name http(s)://host/user/repo $_compiledir/$_modulesdir'"
+	echo "	For repository from sourceforge you can use our $_srcsbinpath/sflatest ulility like 'wget --no-check-certificate \$($_srcsbinpath/sflatest url http(s)://sourceforge.net/projects/repo_name/)' and untar or unzip the file with 'tar -xzf yourfile.tar.gz -C $_compiledir/$_modulesdir/' or 'unzip yourfile.zip -d $_compiledir/$_modulesdir/'"
+	if confirmtogo "...press enter to continue or type 'quit' to compile later: " "quit" ; then
 		exit 0
 	fi
 fi 
 
-$_yum -y install gcc gcc-c++ make zlib-devel pcre-devel openssl-devel wget zip unzip rar unrar bzip2 git curl libxml2 libxslt libxml2-devel libxslt-devel gd gd-devel perl-ExtUtils-Embed geoip geoip-devel pam pam-devel expat expat-devel
+
+$_yum -y install gcc gcc-c++ make zlib-devel pcre-devel openssl-devel wget zip unzip rar unrar bzip2 git curl libxml2 libxslt libxml2-devel libxslt-devel gd gd-devel perl-ExtUtils-Embed geoip geoip-devel pam pam-devel expat expat-devel redhat-lsb-core
 
 _dodownload=0
 if [ -z "$_version" ] ; then
-		_version=$($_srcsbinpath/githublatest https://github.com/nginx/nginx)
+		_version=$(wget -qO - http://nginx.org/en/download.html | grep -Eo 'Stable version(.*)/download/nginx-(.*).tar.gz(.*Legacy versions)' | grep -Eo '/download/nginx-(.*).tar.gz"' | grep -Eo '[0-9].[0-9].[0-9]')
+		if [ -z "$_version" ] ; then
+			_version=$($_srcsbinpath/githublatest https://github.com/nginx/nginx)
+		else
+			_version="release-${_version}"
+		fi
+		
 fi
 if [ -z  "$_noask" ] ; then
 	if ls -d "$_compiledir"/nginx-*/ 2>/dev/null && [ "$(ls -A "$_compiledir"/nginx-*/)" ] ; then
@@ -149,7 +177,7 @@ if [ -z  "$_noask" ] ; then
 				exit 1
 			fi
 		else
-			if confirmtogo "	IMPORTANT: we have found a old source folder $_nginxsrcdir which is same as your requested version '$_version' as we detected. If you didn't make any customization to the files of this directory, you can safely delete it. Do you want to remove those files for a fresh compile or keep the ? ('yes' to delete this dir / press enter only to keep) : " ; then
+			if confirmtogo "	IMPORTANT: we have found a old source folder $_nginxsrcdir which is same as your requested version '$_version' as we detected. If you didn't make any customization to the files of this directory, you can safely delete it. Do you want to remove it for a fresh compile or keep it ? ('yes' to delete this dir / press enter only to keep it) : " ; then
 				rm -rf "$_nginxsrcdir"
 			else
 				_dodownload=1
@@ -211,7 +239,28 @@ if [ -z  "$_noask" ] ; then
 	fi
 fi
 
+function package_exist(){
+	local _pkgname
+	_pkgname=$1
+		if [ -d $(eval echo "$_compiledir/$_modulesdir/$_pkgname"*) ] ; then
+			if [ -z  "$_noask" ] ; then
+				if confirmtogo "	IMPORTANT: $_pkgname module already exist in $_compiledir/$_modulesdir, do you want to download again: (yes/press only enter to cancel downlaod): " ; then
+					rm -rf $(eval echo "$_compiledir/$_modulesdir/$_pkgname"*)
+					return 0
+				else
+					return 1
+				fi
+			else
+				return 1
+			fi
+		else
+			return 0
+		fi
+}
+
 if [ -z "$_noautomod" ] ; then
+
+
 
 	if [ -z "$_ppasource" ] ; then
 	_ppasource="https://launchpad.net/~nginx/+archive/ubuntu/stable/+files/nginx_1.8.0-1%2Btrusty1.debian.tar.gz"
@@ -250,6 +299,59 @@ if [ -z "$_noautomod" ] ; then
 				fi
 			fi
 		else
+			rm -rf "$_nginxppadir/modules/README.Modules-versions"
+			_pgerror=1	
+			if package_exist "ngx_pagespeed" ; then
+				echo "downloading ......"
+				$_srcsbinpath/getgitrepo last https://github.com/pagespeed/ngx_pagespeed "$_nginxppadir/modules"
+				if [ $? -eq 0 ] ; then
+					_pagespeed_dirname=$(eval echo "$_nginxppadir/modules"/ngx_pagespeed*)
+					NPS_VERSION=$(githublatest https://github.com/pagespeed/ngx_pagespeed)
+					NPS_VERSION=${NPS_VERSION%%-*}
+					NPS_VERSION=${NPS_VERSION/v}
+					#cd ngx_pagespeed-*
+					#cd "$_nginxppadir/modules/$_pagespeed_dirname"
+					if [ ! -s $_othersdirectory/archives/${NPS_VERSION}.tar.gz ] ; then
+						wget --no-check-certificate https://dl.google.com/dl/page-speed/psol/${NPS_VERSION}.tar.gz --directory-prefix="$_othersdirectory/archives"
+					fi
+					if [ ! -s "$_othersdirectory/archives/${NPS_VERSION}.tar.gz" ] ; then
+						echo "There is some problem fetching psol library for ngx_pagespeed from https://dl.google.com/dl/page-speed/psol/${NPS_VERSION}.tar.gz"
+						_pgerror=0
+					else
+						tar -xzf $_othersdirectory/archives/${NPS_VERSION}.tar.gz -C "$_pagespeed_dirname"
+					fi
+					# cd "$_compiledir"
+				else
+					echo "	IMPORTANT: there is some problem fetching ngx_pagespeed module from https://github.com/pagespeed/ngx_pagespeed ."
+					_pgerror=0
+				fi
+				if [ "$_pgerror" -eq 0 ] ; then
+					if confirmtogo ".....press enter to continue or type 'quit' to compile later: " "quit" ; then
+						rm -rf "$_nginxppadir/modules/ngx_pagespeed"
+						exit 1
+					fi
+				fi
+			fi
+			#read -p "press..........."
+			if package_exist "nginx-upload-module" ; then
+				echo "downloading ......"
+				$_srcsbinpath/getgitrepo branch 2.2 https://github.com/vkholodkov/nginx-upload-module "$_nginxppadir/modules"
+			fi
+			if package_exist "nginx-module-vts" ; then
+				echo "downloading ......"
+				$_srcsbinpath/getgitrepo last https://github.com/vozlt/nginx-module-vts "$_nginxppadir/modules"
+			fi
+			if package_exist "nginx-http-auth-digest" ; then
+				echo "downloading ......"
+				$_srcsbinpath/getgitrepo last https://github.com/samizdatco/nginx-http-auth-digest "$_nginxppadir/modules"
+			fi
+
+			echo "	IMPORTANT: we have downloaded the following modules and their prerequisites to compile as nginx modules : "
+			ls "$_nginxppadir/modules" 2>/dev/null
+			echo "	IMPORTANT: If any of the modules above creates problems during compilation, please run this script again with 'remove 'folder_name_above1' 'folder_name_above2' and more as the last option and value seperated by space e.g. '$(readlink -f $0) remove 'nginx-http-push'' or '$(readlink -f $0) remove 'nginx-http-push' 'otherfolder''"
+			if confirmtogo ".....press enter to continue or type 'quit' to compile later: " "quit" ; then
+				exit 1
+			fi
 			for _moddir in $(ls -d "$_nginxppadir/modules"/*/)
 			do
 				_moddir=$(rmlastchar $_moddir)
@@ -270,8 +372,8 @@ fi
 
 rm -rf "$_nginxppadir"
 
-$_nginxlua=$(eval echo "$_compiledir/$_modulesdir"/nginx-lua*)
-$_luanginx=$(eval echo "$_compiledir/$_modulesdir"/lua-nginx*)
+_nginxlua=$(eval echo "$_compiledir/$_modulesdir"/nginx-lua*)
+_luanginx=$(eval echo "$_compiledir/$_modulesdir"/lua-nginx*)
 
 if [ "$_nginxlua" != "$_compiledir/$_modulesdir/nginx-lua*" ] || [ "$_luanginx" != "$_compiledir/$_modulesdir/lua-nginx*" ] ; then
 	_luajit=$(command -v luajit)
@@ -318,13 +420,13 @@ if [ "$_nginxlua" != "$_compiledir/$_modulesdir/nginx-lua*" ] || [ "$_luanginx" 
 fi
 
 if [ -z "$_noautomod" ] ; then
-	echo "	IMPORTANT: we have found the following module directory (some of them is downloaded by us) as to compile as nginx modules in $_compiledir/$_modulesdir: "
+	echo "	IMPORTANT: we have found the following module directories (some of them is downloaded by us) as to compile as nginx modules in $_compiledir/$_modulesdir: "
 else
-	echo "	IMPORTANT: we have found the following module directory as to compile as nginx modules in $_compiledir/$_modulesdir: "
+	echo "	IMPORTANT: we have found the following module directories as to compile as nginx modules in $_compiledir/$_modulesdir: "
 fi
 ls -d "$_compiledir/$_modulesdir"/*/ 2>/dev/null
 if [ -z  "$_noask" ] ; then
-	if confirmtogo "	IMPORTANT: Please check all modules directories are listed above. Ensure no module is listed multiple times. Delete any dir to keep only the desired modules. if ok, press enter to continue or type quit to compile later: " "quit" ; then
+	if confirmtogo "	IMPORTANT: Please check all modules directories are listed above and all their prerequisites are installed already as per modules provider's instruction. Ensure no module is listed multiple times. if ok, press enter to continue or type 'quit' to compile later: " "quit" ; then
 		exit 0
 	fi 
 fi
@@ -371,6 +473,25 @@ fi
 make -j2
 _exit=$?
 
+function holdnginx(){
+	if grep -q "exclude=" /etc/yum.conf ; then
+		_line=$(grep "exclude=" /etc/yum.conf)
+		if echo "$_line" | grep -qo "=nginx " ; then
+			return 0
+		elif echo "$_line" | grep -qo "=nginx$" ; then
+			return 0
+		elif echo "$_line" | grep -qo " nginx$" ; then
+			return 0
+		elif echo "$_line" | grep -qo " nginx " ; then
+			return 0
+		fi
+		_line="$_line nginx"
+		replaceline "exclude=" "$_line" /etc/yum.conf
+	else
+		echo "exclude=nginx" >> /etc/yum.conf
+	fi
+}
+
 if [ $_exit -eq 0 ] ; then
 	echo "Nginx compile was successful."
 	
@@ -379,11 +500,27 @@ if [ $_exit -eq 0 ] ; then
 	if [ -z  "$_noask" ] ; then
 		if confirmtogo "	IMPORTANT: Do you want to install the compiled nginx? (yes/enter only to cancel): " ; then
 			make install
-			_installed=0
+			if [ $? -eq 0 ] ; then
+				holdnginx
+				_installed=0
+				service nginx restart
+				echo "Congratulations , nginx has been installed succesfully. Please check with 'nginx -V' command." 1>&2
+			else
+				echo "sorry, nginx can't be installed, there is some error." 1>&2
+				exit 1
+			fi
 		fi
 	fi
 	if [ "$_installed" -eq 1 ] && [ ! -z  "$_install" ] ; then
 		make install
+		if [ $? -eq 0 ] ; then
+			holdnginx
+			service nginx restart
+			echo "Congratulations , nginx has been installed succesfully. Please check with 'nginx -V' command." 1>&2
+		else
+			echo "sorry, nginx can't be installed, there is some error." 1>&2
+			exit 1
+		fi
 	fi
 else
 	echo "Nginx compile was not successful." 1>&2

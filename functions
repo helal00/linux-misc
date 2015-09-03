@@ -140,12 +140,54 @@ function strtoarry(){
 	_c=-1;while read -r _l; do _c=$((_c+1));eval $_retarray[$_c]='$_l';done <<< "$(echo "$_str" | sed -e "s/$_deli/\n/g")"
 }
 
+function getosname(){
+		#if [ -f /etc/os-release ] ; then
+		#eval $(cat /etc/os-release | grep "ID")
+		#echo $ID
+	#fi
+	local _out
+	_out=""
+	if [ ! -z "$(command -v lsb_release)" ] ; then
+		 _out=$(lsb_release -a | grep "Distributor ID:" | awk '{print $NF}')
+	else
+		if [ -s "/etc/os-release" ] ; then
+			eval $(cat /etc/os-release | grep "ID=")
+			_out=$ID
+		elif [ -s "/etc/redhat-release" ] ; then
+			_out=$(cat /etc/redhat-release | head -1 | awk '{print $1}')
+		fi
+	fi
+	
+	if [ ! -z "$_out" ] ; then
+		_out=${_out,,}
+		echo $_out
+	fi 
+}
+
 
 function getosversion(){
-	if [ -f /etc/os-release ] ; then
-		eval $(cat /etc/os-release | grep "VERSION_ID")
-		echo $VERSION_ID
+	#if [ -f /etc/os-release ] ; then
+		#eval $(cat /etc/os-release | grep "VERSION_ID")
+		#echo $VERSION_ID
+	#fi
+	local _out
+	_out=""
+	if [ ! -z "$(command -v lsb_release)" ] ; then
+		_out=$(lsb_release -a | grep "Release:" | awk '{print $NF}')
+	else
+		
+		if [ -s "/etc/os-release" ] ; then
+			eval $(cat /etc/os-release | grep "VERSION_ID=")
+			_out=$VERSION_ID
+		elif [ -s "/etc/redhat-release" ] ; then
+			_out=$(cat /etc/redhat-release | head -1 | awk '{print $3}')
+		fi
 	fi
+	
+	if [ ! -z "$_out" ] ; then
+		_out=${_out,,}
+		echo $_out
+	fi 
 }
 
 function isposint(){
@@ -186,12 +228,7 @@ function replaceline(){
 
 function join { local IFS="$1"; shift; echo "$*"; }
 
-function getosname(){
-	if [ -f /etc/os-release ] ; then
-		eval $(cat /etc/os-release | grep "ID")
-		echo $ID
-	fi
-}
+
 
 function isinteractive(){
 	fd=0   # stdin
@@ -202,7 +239,7 @@ function isinteractive(){
 }
 
 function getowner(){
-	local _entry	
+	local _entry
 	_entry="$1"	
 	if [ -z "$_entry" ] ||  [ ! -e "$_entry" ] ; then
 		echo ""
