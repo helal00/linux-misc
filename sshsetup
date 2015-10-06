@@ -246,6 +246,7 @@ if [ "$_genkey" -eq 1 ] ; then
 fi	
 
 chmod 700 ~/.ssh
+chmod 700 ~
 _mykey="$(cat $_sshkeyloc/${_idfilename}.pub)"
 
 
@@ -294,25 +295,36 @@ fi
 
 if [ $_exit0 -eq 0 ] ; then
 ssh -t $_sshuser@$_sshhost bash -c 'echo
-mkdir -p ~/.ssh
-chmod 700 ~/.ssh
-touch ~/.ssh/authorized_keys
-chmod 600 ~/.ssh/authorized_keys 
-if ! grep -Fq '\'$_mykey\'' ~/.ssh/authorized_keys ; then
-	sed -i -e '\''$''a'\\\'' ~/.ssh/authorized_keys
-	echo '$_mykey' | tee -a ~/.ssh/authorized_keys
+_userprofile=$(eval echo ~$USER)
+if [ ! -d $_userprofile/.ssh ] ; then
+	mkdir -p $_userprofile/.ssh
+	chmod 700 $_userprofile/.ssh
+fi
+if [ ! -f $_userprofile/.ssh/authorized_keys ] ; then
+	touch $_userprofile/.ssh/authorized_keys
+	chmod 600 $_userprofile/.ssh/authorized_keys
+fi 
+if ! grep -Fq '\'$_mykey\'' $_userprofile/.ssh/authorized_keys ; then
+	sed -i -e '\''$''a'\\\'' $_userprofile/.ssh/authorized_keys
+	echo '$_mykey' | tee -a $_userprofile/.ssh/authorized_keys
 fi
 
 if [ '$_exit1' -ne 1 ] && [ '$_usesudo' -eq 1 ] ; then
-	rootprofile=$(eval echo ~root)
-	sudo mkdir -p $rootprofile/.ssh
-	sudo chown root:root $rootprofile/.ssh
-	sudo touch $rootprofile/.ssh/authorized_keys
-	sudo chown root:root $rootprofile/.ssh/authorized_keys
-	sudo chmod 600 $rootprofile/.ssh/authorized_keys 
-	if ! sudo grep -Fq '\'$_mykey\'' $rootprofile/.ssh/authorized_keys ; then
-		sudo sed -i -e '\''$''a'\\\'' $rootprofile/.ssh/authorized_keys
-		echo '$_mykey' | sudo tee -a $rootprofile/.ssh/authorized_keys
+	_rootprofile=$(eval echo ~root)
+	if sudo test ! -d $_rootprofile/.ssh ; then
+		sudo mkdir -p $_rootprofile/.ssh
+		sudo chown root:root $_rootprofile/.ssh
+		sudo chmod 700 $_rootprofile/.ssh
+	fi
+	if sudo test ! -f $_rootprofile/.ssh/authorized_keys ; then
+		sudo touch $_rootprofile/.ssh/authorized_keys
+		sudo chown root:root $_rootprofile/.ssh/authorized_keys
+		sudo chmod 600 $_rootprofile/.ssh/authorized_keys 
+	fi
+	
+	if ! sudo grep -Fq '\'$_mykey\'' $_rootprofile/.ssh/authorized_keys ; then
+		sudo sed -i -e '\''$''a'\\\'' $_rootprofile/.ssh/authorized_keys
+		echo '$_mykey' | sudo tee -a $_rootprofile/.ssh/authorized_keys
 	fi
 fi
 '
@@ -325,17 +337,21 @@ fi
 
 if [ $_exit0 -eq 1 ] && [ $_exit1 -eq 0 ] && [ "$_usesudo" -eq 1 ]  ; then
 ssh -t $_sshuser@$_sshhost bash -c 'echo
-rootprofile=$(eval echo ~root)
-sudo mkdir -p $rootprofile/.ssh
-sudo chown root:root $rootprofile/.ssh
-chmod 700 $rootprofile/.ssh
-sudo touch $rootprofile/.ssh/authorized_keys
-sudo chown root:root $rootprofile/.ssh/authorized_keys
-sudo chmod 600 $rootprofile/.ssh/authorized_keys
- 
-if ! sudo grep -Fq '\'$_mykey\'' $rootprofile/.ssh/authorized_keys ; then
-	sudo sed -i -e '\''$''a'\\\'' $rootprofile/.ssh/authorized_keys
-	echo '$_mykey' | sudo tee -a $rootprofile/.ssh/authorized_keys
+_rootprofile=$(eval sudo echo ~root)
+if sudo test ! -d $_rootprofile/.ssh ; then
+	sudo mkdir -p $_rootprofile/.ssh
+	sudo chown root:root $_rootprofile/.ssh
+	sudo chmod 700 $_rootprofile/.ssh
+fi
+if sudo test ! -f $_rootprofile/.ssh/authorized_keys ; then
+	sudo touch $_rootprofile/.ssh/authorized_keys
+	sudo chown root:root $_rootprofile/.ssh/authorized_keys
+	sudo chmod 600 $_rootprofile/.ssh/authorized_keys 
+fi
+
+if ! sudo grep -Fq '\'$_mykey\'' $_rootprofile/.ssh/authorized_keys ; then
+	sudo sed -i -e '\''$''a'\\\'' $_rootprofile/.ssh/authorized_keys
+	echo '$_mykey' | sudo tee -a $_rootprofile/.ssh/authorized_keys
 fi
 '
 	if [ $? -ne 0 ] ; then
@@ -412,5 +428,5 @@ if [ $_addtoknownsudo -eq 0 ] && ( [ ! -f $_knownhostfile ] || ! grep -Fq "ssh:/
 	echo "ssh://root@$_sshhost" >> $_knownhostfile
 fi
 
-echo "   INFORMATION: Now check, you can login without password or not. If everything ok, its time to change your ssh password to something too difficult with 'passwd' command and keep it in bank vault or lock your account password with 'passwd -l username', so none can enter your system with password."
+echo "   INFORMATION: Now check, you can login without password or not. Make sure the remote user's home and .ssh directories are chmod to 0700. If everything ok, its time to change your ssh password to something too difficult with 'passwd' command and keep it in bank vault or lock your account password with 'passwd -l username', so none can enter your system with password."
 exit 0
