@@ -73,14 +73,14 @@ _rsafirst=""
 if [ -d $_sshkeyloc ] ; then
 	for kf in $(ls -t $_sshkeyloc)
 	do
-		if [ -s "$_sshkeyloc/$kf" ] && grep -q "BEGIN DSA PRIVATE KEY" "$_sshkeyloc/$kf" ; then
+		if [ ! -d "$_sshkeyloc/$kf" ] && grep -q "BEGIN DSA PRIVATE KEY" "$_sshkeyloc/$kf" ; then
 			_pvkyenames[${#_pvkyenames[@]}]=$kf
 			_foundkey=$((_foundkey+1))
 			if [ -z "$_dsafirst" ] ; then
 				_dsafirst=$kf
 			fi
 		fi
-		if [ -s "$_sshkeyloc/$kf" ] && grep -q "BEGIN RSA PRIVATE KEY" "$_sshkeyloc/$kf" ; then
+		if [ ! -d "$_sshkeyloc/$kf" ] && grep -q "BEGIN RSA PRIVATE KEY" "$_sshkeyloc/$kf" ; then
 			_pvkyenames[${#_pvkyenames[@]}]=$kf
 			_foundkey=$((_foundkey+1))
 			if [ -z "$_rsafirst" ] ; then
