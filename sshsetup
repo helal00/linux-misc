@@ -18,23 +18,20 @@ _sshhost=$1
 _sshuser=$2
 _knownhostfile=$3
 
+
 if [ -z "$_knownhostfile" ] ; then
-	if [ -d "$_srcsbinpath/.store" ] ; then
-		_knownhostfile="$_srcsbinpath/.store/knownhost"
-	else
-		_knownhostfile="$_srcsbinpath/knownhost"
-	fi
+	_knownhostfile="$(eval echo ~$USER)/.hostsetupdone"
 fi
 
 if [ -s "$_srcsbinpath/functions" ] ; then
 	. $_srcsbinpath/functions	
 else
-	echo "$_srcsbinpath/functions file not found!" 1>&2
+	echo "	ERROR: $_srcsbinpath/functions file not found!" 1>&2
 	exit 1
 fi
 
 if ! isinteractive ; then
-	echo "This script can't run in non-interactive mode...exiting." 1>&2
+	echo "	ERROR: This script can't run in non-interactive mode...exiting." 1>&2
 	exit 1
 fi
 
@@ -47,38 +44,209 @@ if [ ! -z $_sshhost ] ; then
 		read -p "Please enter the username of the remote server: " _sshuser
 	fi
 	if [ -z $_sshuser ] ; then
-		echo "Error: no user given." 1>&2
+		echo "	ERROR: no user given." 1>&2
 		exit 1
 	fi
 else
-	echo "Error: no host or ip given." 1>&2
+	echo "	ERROR: no host or ip given." 1>&2
 	exit 1
 fi
 
-_idfilename="id_dsa"
+_sshkeyloc=""
+if confirmtogo "Do you have a non default ssh key store location? (yes/only enter to use default [$(eval echo ~$USER)/.ssh]): " ; then
+	read -p "Please enter your non default ssh key store directory: " _sshkeyloc
+	if [ -z "$_sshkeyloc" ] || [ ! -d "$_sshkeyloc" ] ; then
+		echo "	ERROR: No directory given or directory $_sshkeyloc does not exist. aborting..." 1>&2
+		exit 1
+	fi
+else
+	_sshkeyloc=$(eval echo ~$USER)/.ssh
+fi
+
 _genkey=0
-if [ ! -s ~/.ssh/${_idfilename} ] ; then
+_foundkey=0
+_idfilename=""
+_idtype=""
+declare -a _pvkyenames
+_dsafirst=""
+_rsafirst=""
+if [ -d $_sshkeyloc ] ; then
+	for kf in $(ls -t $_sshkeyloc)
+	do
+		if [ -s "$_sshkeyloc/$kf" ] && grep -q "BEGIN DSA PRIVATE KEY" "$_sshkeyloc/$kf" ; then
+			_pvkyenames[${#_pvkyenames[@]}]=$kf
+			_foundkey=$((_foundkey+1))
+			if [ -z "$_dsafirst" ] ; then
+				_dsafirst=$kf
+			fi
+		fi
+		if [ -s "$_sshkeyloc/$kf" ] && grep -q "BEGIN RSA PRIVATE KEY" "$_sshkeyloc/$kf" ; then
+			_pvkyenames[${#_pvkyenames[@]}]=$kf
+			_foundkey=$((_foundkey+1))
+			if [ -z "$_rsafirst" ] ; then
+				_rsafirst=$kf
+			fi
+		fi
+	done
+	
+	if [ ! -z "$_dsafirst" ] ; then
+		_idfilename="$_dsafirst"
+		_idtype="dsa"
+	fi
+	if [ ! -z "$_rsafirst" ] ; then
+		_idfilename="$_rsafirst"
+		_idtype="rsa"
+	fi
+fi
+
+if [ "$_foundkey" -gt 1 ] ; then
+	if confirmtogo "We have found $_foundkey keys in $_sshkeyloc/. We will use the $_idtype key in $_sshkeyloc/$_idfilename. Do you want to use the other key instead?(yes/only enter to use default[$_sshkeyloc/$_idfilename]): " ; then
+		echo "Here is private key files in $_sshkeyloc/: ${_pvkyenames[@]}"
+		read -p "Enter the one of the names above as your current key : " _sshkeyfile
+		if [ ! -z "$_sshkeyfile" ] ; then
+			_inuarray=$(echo ${_pvkyenames[@]} | grep -o "$_sshkeyfile" | wc -w)
+			if [ $_inuarray -lt 1 ] || [ ! -s "$_sshkeyloc/$_sshkeyfile" ] ; then
+				echo "	ERROR: You input an invalid filename or the file is empty. aborting ..." 1>&2 
+				exit 1;
+			else
+				_idfilename="$_sshkeyfile"
+			fi
+		else
+			echo "	ERROR: You input is empty. aborting ..." 1>&2 
+		    exit 1;
+		fi	
+	fi
+fi
+
+
+
+if [ ! -s "$_sshkeyloc/${_idfilename}" ] ; then
 	_genkey=1
 else
-	read -p "A dsa key found in ~/.ssh/id_dsa . Do you want to setup multiple dsa keys? (yes/only enter to cancel) : " _newkey
-	_newkey=${_newkey,,}
-	if [ ! -z "$_newkey" ] && [ "$_newkey" = "yes" ] ; then
-		read -p "Please enter a filename for your new dsa key or only press enter to cancel: " _customname
-		if [ -z "$_customname" ] || [ -s ~/.ssh/${_customname} ] ; then
-			echo "    ERROR: No file name given or the file already exist, please retry with another name" 1>&2
+	if confirmtogo "$_foundkey key file(s) found in $_sshkeyloc/. Do you want to setup another key to use now? (yes/only enter to cancel) : " ; then
+		read -p "Please enter a filename for your new key : " _customname
+		if [ -z "$_customname" ] || [ -f "$_sshkeyloc/${_customname}" ] ; then
+			echo "    ERROR: No file name given or the file already exist, please retry with another name. aborting ..." 1>&2
 			exit 1
 		fi
 		_idfilename=${_customname}
-	       	_genkey=1	
+	    _genkey=1	
 	fi	
 fi
 
-if [ $_genkey -eq 1 ] ; then
-	ssh-keygen -t dsa -f ~/.ssh/${_idfilename}
+if [ "$_genkey" -eq 1 ] ; then
+	if confirmtogo "We will generate 2048-bit RSA key by default. DO you want to customize this? (yes/only enter to take default[2048-bit RSA]): " ; then
+		read -p "Please enter the key type (rsa/dsa): default [rsa]:" _cusidtype
+		_cusidtype=${_cusidtype,,}
+		if [ ! -z "$_cusidtype" ] ; then
+			if [ "$_cusidtype" = "dsa" ] || [ "$_cusidtype" = "rsa" ] ; then
+				_idtype="$_cusidtype"
+			else
+				echo "	ERROR: Not a valid type $_cusidtype. aborting..." 1>&2
+				exit 1
+			fi
+		else
+			_idtype="rsa"
+		fi
+		
+		if [ -z "$_idfilename" ] ; then
+			if [ "$_idtype" = "dsa" ] ; then
+				_idfilename="id_dsa"
+			else
+				_idfilename="id_rsa"
+			fi
+		fi
+		
+		_dsalimit=""
+		_themsg="Please enter bits you want for your $_idtype.Minimum [768] Default [2048]: "
+		if ! _openssl=$(command -v openssl) ; then	
+			if [ "$_idtype" = "dsa" ] ; then
+				if confirmtogo "	IMPORTANT: As we can't find openssl installed in your system, we can genarate only 1024-bit dsa key only. Install openssl to change this limit. Do you want to continue with 1024-bit dsa key ? (type quit to exit/only enter to continue) : " "quit" ; then
+					exit 1
+				else
+					_dsalimit=1024
+				fi
+			fi
+		fi
+		
+		if [ ! -z "$_dsalimit" ] ; then
+			_cusidbits="$_dsalimit"
+		else
+			read -p "$_themsg" _cusidbits
+			_cusidbits=${_cusidbits,,}
+		fi
+		
+		if [ ! -z "$_cusidbits" ] ; then	
+			_bitserror=0
+			if [ "$_idtype" = "dsa" ] ; then
+				if [ -z "$_openssl" ]; then
+					if [ "$_cusidbits" -eq 1024 ] ; then
+						_bits="$_cusidbits"
+					else
+						_bitserror=1
+					fi
+				else
+					if [ "$_cusidbits" -ge 768 ] ; then
+						_bits="$_cusidbits"
+					else
+						_bitserror=1
+					fi
+				fi
+			else
+				if [ "$_cusidbits" -ge 768 ] ; then
+					_bits="$_cusidbits"
+				else
+					_bitserror=1
+				fi
+			fi
+			if [ "_bitserror" -eq 1 ] ; then
+				echo "	ERROR: The given bits $_cusidbits is not valid. aborting ...." 1>&2
+				exit 1
+			fi
+		else
+			if [ "$_idtype" = "rsa" ] ; then
+				_bits=2048
+			else
+				if [ -z "$_openssl" ]; then 
+					_bits=1024
+				else
+					_bits=2048
+				fi
+			fi
+		fi
+	else
+		_bits=2048
+		_idtype="rsa"
+		if [ -z "$_idfilename" ] ; then
+			_idfilename="id_rsa"
+		fi
+	fi
+
+	if [ "$_idtype" = "dsa" ] && [ "$_bits" -ne 1024 ]; then
+		openssl dsaparam -genkey "$_bits" | openssl dsa -out "$_sshkeyloc/${_idfilename}"
+		if [ "$?" -ne 0 ] ; then
+			echo "	ERROR: key genaration with openssl failed. aborting.." 1>&2
+			rm -f "$_sshkeyloc/${_idfilename}"
+			exit 1
+		fi
+		chmod 600 "$_sshkeyloc/${_idfilename}"
+		ssh-keygen -y -f "$_sshkeyloc/${_idfilename}" > "$_sshkeyloc/${_idfilename}.pub"
+		if [ "$?" -ne 0 ] ; then
+			echo "	ERROR: the key genaration failed. aborting.." 1>&2
+			rm -f "$_sshkeyloc/${_idfilename}" "$_sshkeyloc/${_idfilename}.pub"
+			exit 1
+		fi
+	else
+		ssh-keygen -t "$_idtype" -b "$_bits" -f "$_sshkeyloc/${_idfilename}"
+		if [ "$?" -ne 0 ] ; then
+			echo "	ERROR: the key genaration failed. aborting.." 1>&2
+			exit 1
+		fi
+	fi
 fi	
 
 chmod 700 ~/.ssh
-_mykey="$(cat ~/.ssh/${_idfilename}.pub )"
+_mykey="$(cat $_sshkeyloc/${_idfilename}.pub)"
 
 
 _usesudo=0
@@ -179,13 +347,13 @@ fi
 
 
 
-read -p "Did your dsa key requires a passhrase? type 'yes' or press enter only to cancel: " _passph
+read -p "Did your private key requires a passhrase? type 'yes' or press enter only to cancel: " _passph
 _passph=${_passph,,}
 
 if [ ! -z "$_passph" ] && [ "$_passph" = "yes" ] ; then
 	#http://www.funtoo.org/Keychain
 	_debianbased=0
-	if grep -qiEs "Ubuntu|Debian GNU/Linux" /etc/issue ; then
+	if grep -qiEs "Ubuntu|Debian" /etc/issue ; then
 		_debianbased=1
 	fi
 	
@@ -244,5 +412,5 @@ if [ $_addtoknownsudo -eq 0 ] && ( [ ! -f $_knownhostfile ] || ! grep -Fq "ssh:/
 	echo "ssh://root@$_sshhost" >> $_knownhostfile
 fi
 
-echo "   INFORMATION: Now check, you can login without password or not. Make sure the remote ~/.ssh dirrectory and the ~/.ssh/authorized_keys file is owned ang groupowned by the respective username with 'stat' command. If everything ok, its time to change your ssh password to something too difficult with 'passwd' command and keep it in bank vault or lock your account password with 'passwd -l username', so none can enter your system with password."
+echo "   INFORMATION: Now check, you can login without password or not. If everything ok, its time to change your ssh password to something too difficult with 'passwd' command and keep it in bank vault or lock your account password with 'passwd -l username', so none can enter your system with password."
 exit 0
