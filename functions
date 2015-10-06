@@ -148,7 +148,7 @@ function getosname(){
 	local _out
 	_out=""
 	if [ ! -z "$(command -v lsb_release)" ] ; then
-		 _out=$(lsb_release -a | grep "Distributor ID:" | awk '{print $NF}')
+		 _out=$(lsb_release -a 2>/dev/null | grep "Distributor ID:" | awk '{print $NF}')
 	else
 		if [ -s "/etc/os-release" ] ; then
 			eval $(cat /etc/os-release | grep "ID=")
@@ -173,7 +173,7 @@ function getosversion(){
 	local _out
 	_out=""
 	if [ ! -z "$(command -v lsb_release)" ] ; then
-		_out=$(lsb_release -a | grep "Release:" | awk '{print $NF}')
+		_out=$(lsb_release -a 2>/dev/null | grep "Release:" | awk '{print $NF}')
 	else
 		
 		if [ -s "/etc/os-release" ] ; then

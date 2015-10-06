@@ -503,6 +503,8 @@ if [ $_exit -eq 0 ] ; then
 			if [ $? -eq 0 ] ; then
 				holdnginx
 				_installed=0
+				chkconfig --add nginx
+				chkconfig nginx on
 				service nginx restart
 				echo "Congratulations , nginx has been installed succesfully. Please check with 'nginx -V' command." 1>&2
 			else
@@ -515,6 +517,8 @@ if [ $_exit -eq 0 ] ; then
 		make install
 		if [ $? -eq 0 ] ; then
 			holdnginx
+			chkconfig --add nginx
+			chkconfig nginx on
 			service nginx restart
 			echo "Congratulations , nginx has been installed succesfully. Please check with 'nginx -V' command." 1>&2
 		else
