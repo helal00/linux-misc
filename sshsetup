@@ -296,14 +296,15 @@ fi
 if [ $_exit0 -eq 0 ] ; then
 ssh -t $_sshuser@$_sshhost bash -c 'echo
 _userprofile=$(eval echo ~$USER)
+chmod 700 $_userprofile
 if [ ! -d $_userprofile/.ssh ] ; then
 	mkdir -p $_userprofile/.ssh
-	chmod 700 $_userprofile/.ssh
 fi
+chmod 700 $_userprofile/.ssh
 if [ ! -f $_userprofile/.ssh/authorized_keys ] ; then
 	touch $_userprofile/.ssh/authorized_keys
-	chmod 600 $_userprofile/.ssh/authorized_keys
-fi 
+fi
+chmod 600 $_userprofile/.ssh/authorized_keys 
 if ! grep -Fq '\'$_mykey\'' $_userprofile/.ssh/authorized_keys ; then
 	sed -i -e '\''$''a'\\\'' $_userprofile/.ssh/authorized_keys
 	echo '$_mykey' | tee -a $_userprofile/.ssh/authorized_keys
@@ -311,17 +312,17 @@ fi
 
 if [ '$_exit1' -ne 1 ] && [ '$_usesudo' -eq 1 ] ; then
 	_rootprofile=$(eval echo ~root)
+	sudo chmod 700 $_rootprofile
 	if sudo test ! -d $_rootprofile/.ssh ; then
 		sudo mkdir -p $_rootprofile/.ssh
 		sudo chown root:root $_rootprofile/.ssh
-		sudo chmod 700 $_rootprofile/.ssh
 	fi
+	sudo chmod 700 $_rootprofile/.ssh
 	if sudo test ! -f $_rootprofile/.ssh/authorized_keys ; then
 		sudo touch $_rootprofile/.ssh/authorized_keys
 		sudo chown root:root $_rootprofile/.ssh/authorized_keys
-		sudo chmod 600 $_rootprofile/.ssh/authorized_keys 
 	fi
-	
+	sudo chmod 600 $_rootprofile/.ssh/authorized_keys 
 	if ! sudo grep -Fq '\'$_mykey\'' $_rootprofile/.ssh/authorized_keys ; then
 		sudo sed -i -e '\''$''a'\\\'' $_rootprofile/.ssh/authorized_keys
 		echo '$_mykey' | sudo tee -a $_rootprofile/.ssh/authorized_keys
@@ -338,17 +339,17 @@ fi
 if [ $_exit0 -eq 1 ] && [ $_exit1 -eq 0 ] && [ "$_usesudo" -eq 1 ]  ; then
 ssh -t $_sshuser@$_sshhost bash -c 'echo
 _rootprofile=$(eval sudo echo ~root)
+sudo chmod 700 $_rootprofile
 if sudo test ! -d $_rootprofile/.ssh ; then
 	sudo mkdir -p $_rootprofile/.ssh
 	sudo chown root:root $_rootprofile/.ssh
-	sudo chmod 700 $_rootprofile/.ssh
 fi
+sudo chmod 700 $_rootprofile/.ssh
 if sudo test ! -f $_rootprofile/.ssh/authorized_keys ; then
 	sudo touch $_rootprofile/.ssh/authorized_keys
-	sudo chown root:root $_rootprofile/.ssh/authorized_keys
-	sudo chmod 600 $_rootprofile/.ssh/authorized_keys 
+	sudo chown root:root $_rootprofile/.ssh/authorized_keys 
 fi
-
+sudo chmod 600 $_rootprofile/.ssh/authorized_keys
 if ! sudo grep -Fq '\'$_mykey\'' $_rootprofile/.ssh/authorized_keys ; then
 	sudo sed -i -e '\''$''a'\\\'' $_rootprofile/.ssh/authorized_keys
 	echo '$_mykey' | sudo tee -a $_rootprofile/.ssh/authorized_keys
