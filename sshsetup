@@ -120,7 +120,7 @@ fi
 
 
 
-if [ ! -s "$_sshkeyloc/${_idfilename}" ] ; then
+if [ "$_foundkey" -eq 0 ] ; then
 	_genkey=1
 else
 	if confirmtogo "$_foundkey key file(s) found in $_sshkeyloc/. Do you want to setup another key to use now? (yes/only enter to cancel) : " ; then
