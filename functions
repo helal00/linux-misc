@@ -13,28 +13,6 @@
 #You should have received a copy of the GNU General Public License
 #along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#_miscpath=""
-#function addmiscpath(){
-	#local _var _com _comloc
-	#_com=$1
-	#_var="_${1}"
-	#_comloc=$2
-	#if [ -z "$_comloc" ] || [ ! -x "$_comloc" ]; then 
-		#_comloc=$(command -v "$_com")
-	#fi
-	#if [ -z "$_comloc" ] ; then
-		#echo "	ERROR: linux-misc/$_com command not found in your system. Please install it from https://github.com/helal00/linux-misc before continue. If the command is already installed, plese specify it in $_miscpath with adding a line as '$_var=/path/to/$_com'. Create the file if doesn't exist already."
-		#return 1
-	#else		
-		#if ! grep -Fq "$_var=" "$_miscpath" ; then
-			#sed -i -e '$a\' "$_miscpath"
-			#echo "$_var=$_comloc" >> "$_miscpath"
-		#fi
-		#echo "$_comloc"
-	#fi
-	#return 0
-#}
-
 if _bashloc=$(command -v bash) && _head=$(command -v head) && _awk=$(command -v awk) ; then
 	_verline=$($_bashloc --version | $_head -1)
 	_ver=$(echo ${_verline#*version } | $_awk -F. '{print $1}')
@@ -45,6 +23,11 @@ if _bashloc=$(command -v bash) && _head=$(command -v head) && _awk=$(command -v 
 else
 	echo "bash or head or awk command not found in your system. ...aborting..." 1>&2
 	exit 1
+fi
+
+_osarch="386"
+if uname -m | grep -qis "x86_64" ; then
+	_osarch="amd64"
 fi
 
 function rmlastchar(){
@@ -138,6 +121,32 @@ function strtoarry(){
 	local _str _retarray _deli _c _l;_str="$1" _retarray=$2 _deli=$3
 	eval unset $_retarray
 	_c=-1;while read -r _l; do _c=$((_c+1));eval $_retarray[$_c]='$_l';done <<< "$(echo "$_str" | sed -e "s/$_deli/\n/g")"
+}
+
+function psetimeToSec(){
+	local _t _d _h _m _s
+	_t=$1 #25-23:58:21
+	strtoarry "$_t" "_tparts" '-'
+	if [ ${#_tparts[@]} -gt 1 ] ; then
+		_d=${_tparts[0]}
+		_t=${_tparts[1]}
+	fi
+	strtoarry "$_t" "_tparts" ':'
+	if [ ${#_tparts[@]} -gt 2 ] ; then
+		_h=${_tparts[0]}
+		_m=${_tparts[1]}
+		_s=${_tparts[2]}
+	elif [ ${#_tparts[@]} -eq 2 ] ; then
+		_m=${_tparts[0]}
+		_s=${_tparts[1]}
+	elif [ ${#_tparts[@]} -eq 1 ] ; then
+		_s=${_tparts[0]}
+	else
+		echo 0
+		return 1
+	fi
+	echo ${_d:-0}*24*60*60+${_h:-0}*60*60+${_m:-0}*60+${_s:-0}
+	return 0
 }
 
 function getosname(){
@@ -355,157 +364,47 @@ function installpkg(){
 	return $_retval;
 }
 
-
-function golanginstalled(){
-	
-	local _loc _verline
-	_loc=$_go
-	
-	if [ -z "$_loc" ] ; then
-		 _loc=$(isinstalled "go" "$_go")
-	fi
-	
-	if [ -z "$_loc" ] && [ -x "/usr/local/go/bin/go" ] ; then
-		_loc="/usr/local/go/bin/go"
-	fi
-	
-	if [ ! -z "$_loc" ] && [ -x "$_loc" ] && $(echo $($_loc version) | grep -q "go version go") ; then
-		_go="$_loc"
-		echo "$_loc"
-		return 0
-	fi
-	
-	return 1
-
-}
-
-_goversion="1.4.2"
-_osarch="386"
-if uname -m | grep -qis "x86_64" ; then
-	_osarch="amd64"
-fi
-function installgo()
+function bytesToHuman()
 {
-	local pkgname failedmsg retval dirtoinstall golanghome grepline
-	failedmsg="go lang auto install failed!! to continue please try instruction in http://golang.org/doc/install"
-	pkgname="go${_goversion}.linux-${_osarch}.tar.gz"
-	bashrcfile=$(eval echo ~/.bashrc)
-	bashrcfileescaped=${thep//\//\\/}
-	retval=1
-
-	if ! golanginstalled ; then
-		if [ $_debianbased -eq 0 ] ; then
-			
-			if ! _wget=$(isinstalled "wget" "$_wget") ; then
-				if ! installpkg "wget" 0 "'wget' $_installconfirmmsg" ; then
-					_installfailed=1
-					return 1
-				fi		
-			fi
-			
-			if ! golanghome=$(confirmtogo "Default go language home directory: $(eval echo ~/.gohome) . Please type a custom directory or press only enter to take the default directory: " "notempty") ; then
-				golanghome=$(eval echo ~/.gohome)
-			fi
-			
-			if [ ! -e "$golanghome" ] ; then
-				sudo mkdir -p "$golanghome"
-				sudo chown $(id -u):$(id -g) "$golanghome"
-				if [ $? -ne 0 ] ; then
-					echo " ERROR: Go Language home directory $golanghome can't be created" 1>&2
-					return 1
-				fi
-			fi
-			
-			if ! dirtoinstall=$(confirmtogo "Default go language install directory: /usr/local . Please type a custom directory or press only enter to take the default directory: " "notempty") ; then
-				dirtoinstall="/usr/local"
-			fi
-			
-			if [ ! -e "$dirtoinstall" ] ; then
-				sudo mkdir -p "$dirtoinstall"
-				if [ $? -ne 0 ] ; then
-					echo " ERROR: Go Language install directory $dirtoinstall can't be created" 1>&2
-					return 1
-				fi
-			fi
-			
-			_curpath="$PWD"
-			rm -rf /tmp/$pkgname
-			sudo rm -rf "$dirtoinstall/go"
-			cd /tmp
-
-			$_wget --no-check-certificate "https://storage.googleapis.com/golang/$pkgname" -O "$pkgname" || ( cd $_curpath && echo "$failedmsg" 1>&2 && return 1 )
-			sudo tar -C "$dirtoinstall" -xzf $pkgname || ( cd $_curpath && echo "$failedmsg" 1>&2 && sudo rm -rf "$dirtoinstall/go" && return 1 )
-			sudo rm -rf $pkgname
-			cd $_curpath
-			export PATH="$PATH:$dirtoinstall/go/bin"
-			export GOPATH="$golanghome"
-			export PATH="$PATH:$golanghome/bin"
-			_go="$dirtoinstall/go/bin/go"
-			if ! grepline=$(grep -F "export PATH=\$PATH:$dirtoinstall/go/bin" ~/.bashrc) ; then
-				sudo sed -i -e '$a\' ~/.bashrc
-				echo "export PATH=\$PATH:$dirtoinstall/go/bin" >> ~/.bashrc	|| ( echo "$failedmsg" 1>&2 && sudo rm -rf "$dirtoinstall/go" && return 1 )
-			else
-				if [ "${grepline:0:1}" = "#" ] ; then
-					replaceline "$(escapepath "export PATH=\$PATH:$dirtoinstall/go/bin")" "export PATH=\$PATH:$dirtoinstall/go/bin" "$(eval echo ~/.bashrc)"
-				fi
-			fi
-			if ! grepline=$(grep -F "export GOPATH=$golanghome" ~/.bashrc) ; then
-				sed -i -e '$a\' ~/.bashrc
-				echo "export GOPATH=$golanghome" >> ~/.bashrc || ( echo "$failedmsg" 1>&2 && sudo rm -rf "$dirtoinstall/go" && return 1 )
-			else
-				if [ "${grepline:0:1}" = "#" ] ; then
-					replaceline "$(escapepath "export GOPATH=$golanghome")" "export GOPATH=$golanghome" "$(eval echo ~/.bashrc)"
-				fi
-			fi
-			if ! grepline=$(grep -F "export PATH=\$PATH:$golanghome/bin" ~/.bashrc) ; then
-				sed -i -e '$a\' ~/.bashrc
-				echo "export PATH=\$PATH:$golanghome/bin" >> ~/.bashrc || ( echo "$failedmsg" 1>&2 && sudo rm -rf "$dirtoinstall/go" && return 1 )
-			else
-				if [ "${grepline:0:1}" = "#" ] ; then
-					replaceline "$(escapepath "export PATH=\$PATH:$golanghome/bin")" "export PATH=\$PATH:$golanghome/bin" "$(eval echo ~/.bashrc)"
-				fi
-			fi
-			installpkg "git mercurial" || ( echo "$failedmsg" 1>&2 && sudo rm -rf "$dirtoinstall/go" && return 1 )
-			retval=0;		
-		fi
+	local _binary=$2
+	local _slist _div
+	if [ ! -z "$_binary" ] && [ "$_binary" -eq 1 ] ; then
+		_div=1024
+		_slist="bytes,KiB,MiB,GiB,TiB,PiB,EiB,ZiB,YiB"
 	else
-		if [ ! -z "$_go" ] ; then
-			if ! grepline=$(grep -F "export PATH=\$PATH:$(dirname $_go)" ~/.bashrc) ; then
-				sudo sed -i -e '$a\' ~/.bashrc
-				echo "export PATH=\$PATH:$(dirname $_go)" >> ~/.bashrc || ( echo "$failedmsg" 1>&2 && sudo rm -rf /usr/local/go && return 1 )
-			else
-				if [ "${grepline:0:1}" = "#" ] ; then
-					replaceline "$(escapepath "export PATH=\$PATH:$(dirname $_go)")" "export PATH=\$PATH:$(dirname $_go)" "$(eval echo ~/.bashrc)"
-				fi
-			fi
-			if [ -z "$GOPATH" ] ; then
-				golanghome=$(eval echo ~/.gohome)
-				export GOPATH="$golanghome"
-			else
-				golanghome="$GOPATH"
-			fi
-			export PATH=$PATH:"$golanghome/bin"
-			if ! grepline=$(grep -F "export GOPATH=$golanghome" ~/.bashrc) ; then
-					sed -i -e '$a\' ~/.bashrc
-					echo "export GOPATH=$golanghome" >> ~/.bashrc
-			else
-				if [ "${grepline:0:1}" = "#" ] ; then
-					replaceline "$(escapepath "export GOPATH=$golanghome")" "export GOPATH=$golanghome" "$(eval echo ~/.bashrc)"
-				fi
-			fi
-			if ! grepline=$(grep -F "export PATH=\$PATH:$golanghome/bin" ~/.bashrc) ; then
-					sed -i -e '$a\' ~/.bashrc
-					echo "export PATH=\$PATH:$golanghome/bin" >> ~/.bashrc
-			else
-				if [ "${grepline:0:1}" = "#" ] ; then
-					replaceline "$(escapepath "export PATH=\$PATH:$golanghome/bin")" "export PATH=\$PATH:$golanghome/bin" "$(eval echo ~/.bashrc)"
-				fi
-			fi
-			retval=0;
-		else
-			retval=1;
-		fi
-	fi
-	return $retval;
+		_div=1000
+		_slist="bytes,KB,MB,GB,TB,PB,EB,ZB,YB"
+    fi
+
+    local _power=1
+    local _val=$( echo "scale=2; $1 / 1" | bc)
+    local _vint=$( echo $_val / $_div | bc )
+    while [ ! $_vint = "0" ]
+    do
+        let _power=_power+1
+        _val=$( echo "scale=2; $_val / $_div" | bc)
+        _vint=$( echo $_val / $_div | bc )
+    done
+
+    echo -n $_val $( echo $_slist | cut -f$_power -d, )
 }
 
+function secToHour()
+{
+    local _t=$1
+	#local _d=$(echo "$_t/60/60/24" | bc)
+    local _h=$(echo "$_t/60/60" | bc)
+    local _m=$(echo "$_t/60%60" | bc)
+    local _s=$(echo "$_t%60" | bc)
+
+    if [ ${_h:-0} -gt 0 ] ; then
+        echo -n "${_h}h"
+    fi
+    if [ ${_m:-0} -gt 0 ] ; then
+        echo -n "${_m}m"
+    fi
+    
+    if [ ! -z ${_s} ] ; then
+        echo -n "${_s}s"
+    fi  
+}
