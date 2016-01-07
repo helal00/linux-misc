@@ -408,3 +408,56 @@ function secToHour()
         echo -n "${_s}s"
     fi  
 }
+
+function singletonefile(){
+	local _lockpid=""
+	local _newlockpid=""
+	local _lockfile=$1
+	local _maxruntime=$2
+	local _waittime=$3
+	if [ ! -f "$_lockfile" ] ; then
+		return 1
+	fi
+	if [ -z "$_maxruntime" ] ; then
+		_maxruntime=60
+	elif ! isposint "$_maxruntime" || [ "$_maxruntime" -lt 1 ] ; then
+		return 1
+	fi
+	
+	if [ -z "$_waittime" ] ; then
+		_waittime=3
+	elif ! isposint "$_waittime" || [ "$_waittime" -lt 1 ] ; then
+		return 1
+	fi
+	
+	while :
+	do
+		if [ ! -f "$_lockfile" ]; then
+			break
+		else
+			if [ -z "$_lockpid" ] ; then
+				_lockpid=$(cat "$_lockfile")
+			fi
+			if [ ! -z "$_lockpid" ] ; then
+				if ! kill -0 "$_lockpid" &>/dev/null ; then
+					_newlockpid=$(cat "$_lockfile")
+					if [ "$_lockpid" = "$_newlockpid" ] ; then
+						rm -f "$_lockfile"
+						break
+					else
+						_lockpid="$_newlockpid"
+						_newlockpid=""
+					fi
+				fi
+			elif [ -z "$_lockpid" ] ; then
+				rm -f "$_lockfile"
+				break
+			fi
+			if [ $(($(date +%s) - $(date +%s -r $_lockfile))) -gt "$_maxruntime" ] ; then
+				kill -9 "$_lockpid" &>/dev/null
+				break
+			fi
+		fi
+		sleep "$_waittime"
+	done
+}
