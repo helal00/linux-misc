@@ -149,54 +149,65 @@ function psetimeToSec(){
     return 0
 }
 
-function getosname(){
-        #if [ -f /etc/os-release ] ; then
-        #eval $(cat /etc/os-release | grep "ID")
-        #echo $ID
+#function getosname(){
+        ##if [ -f /etc/os-release ] ; then
+        ##eval $(cat /etc/os-release | grep "ID")
+        ##echo $ID
+    ##fi
+    #local _out
+    #_out=""
+    #if [ ! -z "$(command -v lsb_release)" ] ; then
+         #_out=$(lsb_release -a 2>/dev/null | grep "Distributor ID:" | awk '{print $NF}')
+    #else
+        #if [ -s "/etc/os-release" ] ; then
+            #eval $(cat /etc/os-release | grep "ID=")
+            #_out=$ID
+        #elif [ -s "/etc/*-release" ] ; then
+            #_out=$(cat /etc/*-release | head -1 | awk '{print $1}')
+        #fi
     #fi
-    local _out
-    _out=""
-    if [ ! -z "$(command -v lsb_release)" ] ; then
-         _out=$(lsb_release -a 2>/dev/null | grep "Distributor ID:" | awk '{print $NF}')
-    else
-        if [ -s "/etc/os-release" ] ; then
-            eval $(cat /etc/os-release | grep "ID=")
-            _out=$ID
-        elif [ -s "/etc/*-release" ] ; then
-            _out=$(cat /etc/*-release | head -1 | awk '{print $1}')
-        fi
-    fi
     
-    if [ ! -z "$_out" ] ; then
-        _out=${_out,,}
-        echo $_out
-    fi 
+    #if [ ! -z "$_out" ] ; then
+        #_out=${_out,,}
+        #echo $_out
+    #fi 
+#}
+
+function getosname(){
+    local _theosname="$(python -c "import platform;print(platform.linux_distribution())" | awk '{print $1}')"
+    _theosname="${_theosname:2:(-2)}"
+    echo ${_theosname,,}
 }
 
+#function getosversion(){
+    ##if [ -f /etc/os-release ] ; then
+        ##eval $(cat /etc/os-release | grep "VERSION_ID")
+        ##echo $VERSION_ID
+    ##fi
+    #local _out
+    #_out=""
+    #if [ ! -z "$(command -v lsb_release)" ] ; then
+        #_out=$(lsb_release -a 2>/dev/null | grep "Release:" | awk '{print $NF}')
+    #else
+        
+        #if [ -s "/etc/os-release" ] ; then
+            #eval $(cat /etc/os-release | grep "VERSION_ID=")
+            #_out=$VERSION_ID
+        #elif [ -s "/etc/*-release" ] ; then
+            #_out=$(cat /etc/*-release | head -1 | awk '{print $3}')
+        #fi
+    #fi
+    
+    #if [ ! -z "$_out" ] ; then
+        #_out=${_out,,}
+        #echo $_out
+    #fi 
+#}
 
 function getosversion(){
-    #if [ -f /etc/os-release ] ; then
-        #eval $(cat /etc/os-release | grep "VERSION_ID")
-        #echo $VERSION_ID
-    #fi
-    local _out
-    _out=""
-    if [ ! -z "$(command -v lsb_release)" ] ; then
-        _out=$(lsb_release -a 2>/dev/null | grep "Release:" | awk '{print $NF}')
-    else
-        
-        if [ -s "/etc/os-release" ] ; then
-            eval $(cat /etc/os-release | grep "VERSION_ID=")
-            _out=$VERSION_ID
-        elif [ -s "/etc/*-release" ] ; then
-            _out=$(cat /etc/*-release | head -1 | awk '{print $3}')
-        fi
-    fi
-    
-    if [ ! -z "$_out" ] ; then
-        _out=${_out,,}
-        echo $_out
-    fi 
+    local _theversion="$(python -c "import platform;print(platform.linux_distribution())" | awk '{print $2}')"
+    _theversion="${_theversion:1:(-2)}"
+    echo ${_theversion,,}
 }
 
 function isposint(){
@@ -460,4 +471,28 @@ function singletonefile(){
         fi
         sleep "$_waittime"
     done
+}
+
+function findanddelline(){
+    local _filetofind=$1
+    local _strtofind=$2
+    local _singletone=$3
+    local _found=1
+    local _newfile=""
+    if [ ! -f "$_filetofind" ] ; then
+        return 1
+    fi
+    if [ ! -z "$_singletone" ] && [ "$_singletone" -eq 0 ] ; then
+        singletonefile "${_filetofind}.lock" 20 2
+        echo "$$" > "${_filetofind}.lock"
+    fi
+    if grep -q "$_strtofind" "$_filetofind" ; then
+        _newfile="${_filetofind}.$(date +%s).temp"
+        grep -v "$_strtofind" "$_filetofind" > "$_newfile" ; mv "$_newfile" "$_filetofind"
+        _found=0
+    fi
+    if [ ! -z "$_singletone" ] && [ "$_singletone" -eq 0 ] ; then
+        rm -f "${_filetofind}.lock"
+    fi
+    return "$_found"
 }
