@@ -14,224 +14,224 @@
 #along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 if _bashloc=$(command -v bash) && _head=$(command -v head) && _awk=$(command -v awk) ; then
-	_verline=$($_bashloc --version | $_head -1)
-	_ver=$(echo ${_verline#*version } | $_awk -F. '{print $1}')
-	if [ "$_ver" -lt 4 ] ; then
-		echo "This script requires minimum bash version 4, but you have $_verline . ...aborting..." 1>&2
-		exit 1
-	fi
+    _verline=$($_bashloc --version | $_head -1)
+    _ver=$(echo ${_verline#*version } | $_awk -F. '{print $1}')
+    if [ "$_ver" -lt 4 ] ; then
+        echo "This script requires minimum bash version 4, but you have $_verline . ...aborting..." 1>&2
+        exit 1
+    fi
 else
-	echo "bash or head or awk command not found in your system. ...aborting..." 1>&2
-	exit 1
+    echo "bash or head or awk command not found in your system. ...aborting..." 1>&2
+    exit 1
 fi
 
 _osarch="386"
 if uname -m | grep -qis "x86_64" ; then
-	_osarch="amd64"
+    _osarch="amd64"
 fi
 
 function rmlastchar(){
-	local _str _count _till
-	if [ "$#" -eq 0 ] ; then
-		return 1
-	elif [ "$#" -eq 1 ] ; then
-		_str="$1"
-		_count=1
-	elif [ "$#" -eq 2 ] ; then
-		_str="$1"
-		_count="$2"
-	fi
-	_till=${#_str}
-	_till=$((_till-_count))
-	echo ${_str::$_till}
+    local _str _count _till
+    if [ "$#" -eq 0 ] ; then
+        return 1
+    elif [ "$#" -eq 1 ] ; then
+        _str="$1"
+        _count=1
+    elif [ "$#" -eq 2 ] ; then
+        _str="$1"
+        _count="$2"
+    fi
+    _till=${#_str}
+    _till=$((_till-_count))
+    echo ${_str::$_till}
 }
 
 function trimStr(){
-	local _deli _deli2 _strtotrim
-	if [ "$#" -eq 0 ] ; then
-		return 1
-	elif [ "$#" -eq 1 ] ; then
-		_deli=" "
-		_deli2=" "
-		_strtotrim="$*"
-	elif [ "$#" -eq 2 ] ; then
-		_deli="$1"
-		_deli2="$1"
-		shift
-		_strtotrim="$*"
-	elif [ "$#" -gt 2 ] ; then
-		_deli="$1"
-		shift
-		_deli2="$1"
-		shift
-		_strtotrim="$*"
-	fi
-	while [ "${_strtotrim:0:1}" = "$_deli"  ] ; do 
-		_strtotrim="${_strtotrim/#$_deli}"
-	done
-	while [ "${_strtotrim:(-1):1}" = "$_deli2"  ] ; do 
-		_strtotrim="${_strtotrim/%$_deli2}"
-	done
-	echo "$_strtotrim"
+    local _deli _deli2 _strtotrim
+    if [ "$#" -eq 0 ] ; then
+        return 1
+    elif [ "$#" -eq 1 ] ; then
+        _deli=" "
+        _deli2=" "
+        _strtotrim="$*"
+    elif [ "$#" -eq 2 ] ; then
+        _deli="$1"
+        _deli2="$1"
+        shift
+        _strtotrim="$*"
+    elif [ "$#" -gt 2 ] ; then
+        _deli="$1"
+        shift
+        _deli2="$1"
+        shift
+        _strtotrim="$*"
+    fi
+    while [ "${_strtotrim:0:1}" = "$_deli"  ] ; do 
+        _strtotrim="${_strtotrim/#$_deli}"
+    done
+    while [ "${_strtotrim:(-1):1}" = "$_deli2"  ] ; do 
+        _strtotrim="${_strtotrim/%$_deli2}"
+    done
+    echo "$_strtotrim"
 }
 
 function isvalidip4(){
-	if echo "$1" | grep -qE "^(([0-9][0-9]?|[0-1][0-9][0-9]|[2][0-4][0-9]|[2][5][0-5])\.){3}([0-9][0-9]?|[0-1][0-9][0-9]|[2][0-4][0-9]|[2][5][0-5])$" ; then
-		return 0
-	fi
-	return 1
+    if echo "$1" | grep -qE "^(([0-9][0-9]?|[0-1][0-9][0-9]|[2][0-4][0-9]|[2][5][0-5])\.){3}([0-9][0-9]?|[0-1][0-9][0-9]|[2][0-4][0-9]|[2][5][0-5])$" ; then
+        return 0
+    fi
+    return 1
 }
 
 function confirmtogo(){
-	local _conit _valtogo _msg
-	_msg=$1
-	_valtogo=$2
-	if [ -z "$_msg" ] ; then
-		return 1
-	fi
-	read -p "$_msg" _conit
-	_conit=${_conit,,}
-	if [ -z "$_valtogo" ] ; then
-		_valtogo="yes"
-	else
-		_valtogo=${_valtogo,,}
-	fi
-	if [ "$_valtogo" = "notempty" ] ; then
-		if [ ! -z "$_conit" ] ; then
-			echo "$_conit"
-			return 0
-		else
-			return 1
-		fi
-	elif [ "$_valtogo" = "pathexist" ] ; then
-		if [ -e "$_conit" ] ; then
-			echo "$_conit"
-			return 0
-		else
-			return 1
-		fi
-	elif [ ! -z "$_conit" ] && [ "$_conit" = "$_valtogo" ] ; then
-		return 0
-	fi
-	return 1
+    local _conit _valtogo _msg
+    _msg=$1
+    _valtogo=$2
+    if [ -z "$_msg" ] ; then
+        return 1
+    fi
+    read -p "$_msg" _conit
+    _conit=${_conit,,}
+    if [ -z "$_valtogo" ] ; then
+        _valtogo="yes"
+    else
+        _valtogo=${_valtogo,,}
+    fi
+    if [ "$_valtogo" = "notempty" ] ; then
+        if [ ! -z "$_conit" ] ; then
+            echo "$_conit"
+            return 0
+        else
+            return 1
+        fi
+    elif [ "$_valtogo" = "pathexist" ] ; then
+        if [ -e "$_conit" ] ; then
+            echo "$_conit"
+            return 0
+        else
+            return 1
+        fi
+    elif [ ! -z "$_conit" ] && [ "$_conit" = "$_valtogo" ] ; then
+        return 0
+    fi
+    return 1
 }
 
 #strtoarry "$_url" "_uparts" '\/'
 function strtoarry(){
-	local _str _retarray _deli _c _l;_str="$1" _retarray=$2 _deli=$3
-	eval unset $_retarray
-	_c=-1;while read -r _l; do _c=$((_c+1));eval $_retarray[$_c]='$_l';done <<< "$(echo "$_str" | sed -e "s/$_deli/\n/g")"
+    local _str _retarray _deli _c _l;_str="$1" _retarray=$2 _deli=$3
+    eval unset $_retarray
+    _c=-1;while read -r _l; do _c=$((_c+1));eval $_retarray[$_c]='$_l';done <<< "$(echo "$_str" | sed -e "s/$_deli/\n/g")"
 }
 
 function psetimeToSec(){
-	local _t _d _h _m _s
-	_t=$1 #25-23:58:21
-	strtoarry "$_t" "_tparts" '-'
-	if [ ${#_tparts[@]} -gt 1 ] ; then
-		_d=${_tparts[0]}
-		_t=${_tparts[1]}
-	fi
-	strtoarry "$_t" "_tparts" ':'
-	if [ ${#_tparts[@]} -gt 2 ] ; then
-		_h=${_tparts[0]}
-		_m=${_tparts[1]}
-		_s=${_tparts[2]}
-	elif [ ${#_tparts[@]} -eq 2 ] ; then
-		_m=${_tparts[0]}
-		_s=${_tparts[1]}
-	elif [ ${#_tparts[@]} -eq 1 ] ; then
-		_s=${_tparts[0]}
-	else
-		echo 0
-		return 1
-	fi
-	echo ${_d:-0}*24*60*60+${_h:-0}*60*60+${_m:-0}*60+${_s:-0}
-	return 0
+    local _t _d _h _m _s
+    _t=$1 #25-23:58:21
+    strtoarry "$_t" "_tparts" '-'
+    if [ ${#_tparts[@]} -gt 1 ] ; then
+        _d=${_tparts[0]}
+        _t=${_tparts[1]}
+    fi
+    strtoarry "$_t" "_tparts" ':'
+    if [ ${#_tparts[@]} -gt 2 ] ; then
+        _h=${_tparts[0]}
+        _m=${_tparts[1]}
+        _s=${_tparts[2]}
+    elif [ ${#_tparts[@]} -eq 2 ] ; then
+        _m=${_tparts[0]}
+        _s=${_tparts[1]}
+    elif [ ${#_tparts[@]} -eq 1 ] ; then
+        _s=${_tparts[0]}
+    else
+        echo 0
+        return 1
+    fi
+    echo ${_d:-0}*24*60*60+${_h:-0}*60*60+${_m:-0}*60+${_s:-0}
+    return 0
 }
 
 function getosname(){
-		#if [ -f /etc/os-release ] ; then
-		#eval $(cat /etc/os-release | grep "ID")
-		#echo $ID
-	#fi
-	local _out
-	_out=""
-	if [ ! -z "$(command -v lsb_release)" ] ; then
-		 _out=$(lsb_release -a 2>/dev/null | grep "Distributor ID:" | awk '{print $NF}')
-	else
-		if [ -s "/etc/os-release" ] ; then
-			eval $(cat /etc/os-release | grep "ID=")
-			_out=$ID
-		elif [ -s "/etc/redhat-release" ] ; then
-			_out=$(cat /etc/redhat-release | head -1 | awk '{print $1}')
-		fi
-	fi
-	
-	if [ ! -z "$_out" ] ; then
-		_out=${_out,,}
-		echo $_out
-	fi 
+        #if [ -f /etc/os-release ] ; then
+        #eval $(cat /etc/os-release | grep "ID")
+        #echo $ID
+    #fi
+    local _out
+    _out=""
+    if [ ! -z "$(command -v lsb_release)" ] ; then
+         _out=$(lsb_release -a 2>/dev/null | grep "Distributor ID:" | awk '{print $NF}')
+    else
+        if [ -s "/etc/os-release" ] ; then
+            eval $(cat /etc/os-release | grep "ID=")
+            _out=$ID
+        elif [ -s "/etc/*-release" ] ; then
+            _out=$(cat /etc/*-release | head -1 | awk '{print $1}')
+        fi
+    fi
+    
+    if [ ! -z "$_out" ] ; then
+        _out=${_out,,}
+        echo $_out
+    fi 
 }
 
 
 function getosversion(){
-	#if [ -f /etc/os-release ] ; then
-		#eval $(cat /etc/os-release | grep "VERSION_ID")
-		#echo $VERSION_ID
-	#fi
-	local _out
-	_out=""
-	if [ ! -z "$(command -v lsb_release)" ] ; then
-		_out=$(lsb_release -a 2>/dev/null | grep "Release:" | awk '{print $NF}')
-	else
-		
-		if [ -s "/etc/os-release" ] ; then
-			eval $(cat /etc/os-release | grep "VERSION_ID=")
-			_out=$VERSION_ID
-		elif [ -s "/etc/redhat-release" ] ; then
-			_out=$(cat /etc/redhat-release | head -1 | awk '{print $3}')
-		fi
-	fi
-	
-	if [ ! -z "$_out" ] ; then
-		_out=${_out,,}
-		echo $_out
-	fi 
+    #if [ -f /etc/os-release ] ; then
+        #eval $(cat /etc/os-release | grep "VERSION_ID")
+        #echo $VERSION_ID
+    #fi
+    local _out
+    _out=""
+    if [ ! -z "$(command -v lsb_release)" ] ; then
+        _out=$(lsb_release -a 2>/dev/null | grep "Release:" | awk '{print $NF}')
+    else
+        
+        if [ -s "/etc/os-release" ] ; then
+            eval $(cat /etc/os-release | grep "VERSION_ID=")
+            _out=$VERSION_ID
+        elif [ -s "/etc/*-release" ] ; then
+            _out=$(cat /etc/*-release | head -1 | awk '{print $3}')
+        fi
+    fi
+    
+    if [ ! -z "$_out" ] ; then
+        _out=${_out,,}
+        echo $_out
+    fi 
 }
 
 function isposint(){
-	local _val
-	_val=$1
-	if [ -n "$_val" ] && echo "$_val" | grep -q "^-\?[0-9]*$" && [ "$_val" -ge 0 ] ; then
-		return 0
-	fi
-	return 1
+    local _val
+    _val=$1
+    if [ -n "$_val" ] && echo "$_val" | grep -q "^-\?[0-9]*$" && [ "$_val" -ge 0 ] ; then
+        return 0
+    fi
+    return 1
 }
 
 function isint(){
-	local _val
-	_val=$1
-	if [ -n "$_val" ] && echo "$_val" | grep -q "^-\?[0-9]*$" ; then
-		return 0
-	fi
-	return 1
+    local _val
+    _val=$1
+    if [ -n "$_val" ] && echo "$_val" | grep -q "^-\?[0-9]*$" ; then
+        return 0
+    fi
+    return 1
 }
 
 function escapepath(){
-	local _thep
-	_thep=$1
-	_thep=${_thep//\//\\/}
-	echo "$_thep"
+    local _thep
+    _thep=$1
+    _thep=${_thep//\//\\/}
+    echo "$_thep"
 }
 
 function replaceline(){
-	local _pattern _replace _file
-	_pattern=$1
-	_replace=$2
-	_file=$3
-	sed -i "/$_pattern/ { c \
-	$_replace
-	}" "$_file"
+    local _pattern _replace _file
+    _pattern=$1
+    _replace=$2
+    _file=$3
+    sed -i "/$_pattern/ { c \
+    $_replace
+    }" "$_file"
 }
 
 
@@ -240,140 +240,140 @@ function join { local IFS="$1"; shift; echo "$*"; }
 
 
 function isinteractive(){
-	fd=0   # stdin
-	if [ -t "$fd" ] || [ -p /dev/stdin ] ; then
-	  return 0
-	fi
-	return 1
+    fd=0   # stdin
+    if [ -t "$fd" ] || [ -p /dev/stdin ] ; then
+      return 0
+    fi
+    return 1
 }
 
 function getowner(){
-	local _entry
-	_entry="$1"	
-	if [ -z "$_entry" ] ||  [ ! -e "$_entry" ] ; then
-		echo ""
-	else
-		if [ -d "$_entry" ] ; then
-			echo $(ls -al "$_entry" | grep ' \.$' | awk '{print $3}')
-		else
-			echo $(ls -al "$_entry" | awk '{print $3}') 
-		fi
-	fi
+    local _entry
+    _entry="$1" 
+    if [ -z "$_entry" ] ||  [ ! -e "$_entry" ] ; then
+        echo ""
+    else
+        if [ -d "$_entry" ] ; then
+            echo $(ls -al "$_entry" | grep ' \.$' | awk '{print $3}')
+        else
+            echo $(ls -al "$_entry" | awk '{print $3}') 
+        fi
+    fi
 }
 
 
 
 function getnewest(){
-	
-	local _loc _pat _new _setvar _owner _ret
-	_loc=$1
-	_pat=$2
-	_setvar=$3
-	_owner=$4
-	
-	#echo "this $_loc $_pat $_setvar"
-	_ret=1
-	_new=""
-	for sp in $(ls -a ${_loc} | grep "${_pat}")
-	do
-		if [ -z "$_new" ] || [ "${_loc}/$sp" -nt "${_loc}/$_new" ] ; then
-			if [ ! -z "$_owner" ] ; then		
-				if [ "$_owner" = $(getowner "${_loc}/$_new") ] ; then
-					_new=$sp
-				fi
-			else
-				_new=$sp
-			fi
-		fi
-	done
-	if [ ! -z "$_new" ] ; then
-		eval $_setvar=${_loc}/$_new
-		_ret=0
-	fi
-	
-	return $_ret
-	
+    
+    local _loc _pat _new _setvar _owner _ret
+    _loc=$1
+    _pat=$2
+    _setvar=$3
+    _owner=$4
+    
+    #echo "this $_loc $_pat $_setvar"
+    _ret=1
+    _new=""
+    for sp in $(ls -a ${_loc} | grep "${_pat}")
+    do
+        if [ -z "$_new" ] || [ "${_loc}/$sp" -nt "${_loc}/$_new" ] ; then
+            if [ ! -z "$_owner" ] ; then        
+                if [ "$_owner" = $(getowner "${_loc}/$_new") ] ; then
+                    _new=$sp
+                fi
+            else
+                _new=$sp
+            fi
+        fi
+    done
+    if [ ! -z "$_new" ] ; then
+        eval $_setvar=${_loc}/$_new
+        _ret=0
+    fi
+    
+    return $_ret
+    
 }
 
 function isinstalled(){
-	local _cmd _cmdloc
-	_cmd=$1
-	if [ -z $2 ] ; then
-		_cmdloc=$(command -v $_cmd)
-	else
-		_cmdloc=$2
-	fi
-	
-	if [ -z "$_cmdloc"  ] || [ ! -x "${_cmdloc}" ] ; then
-		#echo "$_cmd is not installed"
-		return 1
-	else
-		#echo "$_cmd is installed"
-		echo "$_cmdloc"
-		return 0
-	fi
+    local _cmd _cmdloc
+    _cmd=$1
+    if [ -z $2 ] ; then
+        _cmdloc=$(command -v $_cmd)
+    else
+        _cmdloc=$2
+    fi
+    
+    if [ -z "$_cmdloc"  ] || [ ! -x "${_cmdloc}" ] ; then
+        #echo "$_cmd is not installed"
+        return 1
+    else
+        #echo "$_cmd is installed"
+        echo "$_cmdloc"
+        return 0
+    fi
 }
 
 function installpkg(){
-	local _pkgname _exitonfail _retval _helpurl _confirmmsg
-	_retval=1
-	_pkgname=$1
-	
-	if [ -z "$1" ] ; then
-		echo "No package name specified."
-		return $_retval
-	else
-		_pkgname=$1
-	fi
-	
-	if [ -z "$2" ] ; then
-		_exitonfail=1
-	else
-		_exitonfail=$2
-	fi
-	
-	if [ ! -z "$4" ] ; then
-		_helpurl=" Details at: $4 ."
-	fi
+    local _pkgname _exitonfail _retval _helpurl _confirmmsg
+    _retval=1
+    _pkgname=$1
+    
+    if [ -z "$1" ] ; then
+        echo "No package name specified."
+        return $_retval
+    else
+        _pkgname=$1
+    fi
+    
+    if [ -z "$2" ] ; then
+        _exitonfail=1
+    else
+        _exitonfail=$2
+    fi
+    
+    if [ ! -z "$4" ] ; then
+        _helpurl=" Details at: $4 ."
+    fi
 
-	if [ $_debianbased -eq 0 ] ; then
-		if [ ! -z "$3" ] ; then
-			read -p "$3" _confirmmsg
-			_confirmmsg=${_confirmmsg,,}
-			if [ -z "$_confirmmsg" ] || [ ! "$_confirmmsg" = "yes" ] ; then
-				if [ $_exitonfail -eq 0 ] ; then
-					return 1
-				fi
-			fi
-		fi
-		sudo apt-get -y install $_pkgname
-		if [ $? -eq 0 ] ; then
-			_retval=0
-		else
-			echo "Please Install '$_pkgname' package(s) to continue. apt-get installation fails.$_helpurl" 1>&2
-			if [ $_exitonfail -eq 0 ] ; then
-				return 1
-			fi
-		fi
-	else
-		echo "Please Install '$_pkgname' package(s) for your distro to continue.$_helpurl" 1>&2
-		if [ $_exitonfail -eq 0 ] ; then
-			return 1
-		fi
-	fi
-	return $_retval;
+    if [ $_debianbased -eq 0 ] ; then
+        if [ ! -z "$3" ] ; then
+            read -p "$3" _confirmmsg
+            _confirmmsg=${_confirmmsg,,}
+            if [ -z "$_confirmmsg" ] || [ ! "$_confirmmsg" = "yes" ] ; then
+                if [ $_exitonfail -eq 0 ] ; then
+                    return 1
+                fi
+            fi
+        fi
+        sudo apt-get -y install $_pkgname
+        if [ $? -eq 0 ] ; then
+            _retval=0
+        else
+            echo "Please Install '$_pkgname' package(s) to continue. apt-get installation fails.$_helpurl" 1>&2
+            if [ $_exitonfail -eq 0 ] ; then
+                return 1
+            fi
+        fi
+    else
+        echo "Please Install '$_pkgname' package(s) for your distro to continue.$_helpurl" 1>&2
+        if [ $_exitonfail -eq 0 ] ; then
+            return 1
+        fi
+    fi
+    return $_retval;
 }
 
 function bytesToHuman()
 {
-	local _binary=$2
-	local _slist _div
-	if [ ! -z "$_binary" ] && [ "$_binary" -eq 1 ] ; then
-		_div=1024
-		_slist="bytes,KiB,MiB,GiB,TiB,PiB,EiB,ZiB,YiB"
-	else
-		_div=1000
-		_slist="bytes,KB,MB,GB,TB,PB,EB,ZB,YB"
+    local _binary=$2
+    local _slist _div
+    if [ ! -z "$_binary" ] && [ "$_binary" -eq 1 ] ; then
+        _div=1024
+        _slist="bytes,KiB,MiB,GiB,TiB,PiB,EiB,ZiB,YiB"
+    else
+        _div=1000
+        _slist="bytes,KB,MB,GB,TB,PB,EB,ZB,YB"
     fi
 
     local _power=1
@@ -392,7 +392,7 @@ function bytesToHuman()
 function secToHour()
 {
     local _t=$1
-	#local _d=$(echo "$_t/60/60/24" | bc)
+    #local _d=$(echo "$_t/60/60/24" | bc)
     local _h=$(echo "$_t/60/60" | bc)
     local _m=$(echo "$_t/60%60" | bc)
     local _s=$(echo "$_t%60" | bc)
@@ -410,54 +410,54 @@ function secToHour()
 }
 
 function singletonefile(){
-	local _lockpid=""
-	local _newlockpid=""
-	local _lockfile=$1
-	local _maxruntime=$2
-	local _waittime=$3
-	if [ ! -f "$_lockfile" ] ; then
-		return 1
-	fi
-	if [ -z "$_maxruntime" ] ; then
-		_maxruntime=60
-	elif ! isposint "$_maxruntime" || [ "$_maxruntime" -lt 1 ] ; then
-		return 1
-	fi
-	
-	if [ -z "$_waittime" ] ; then
-		_waittime=3
-	elif ! isposint "$_waittime" || [ "$_waittime" -lt 1 ] ; then
-		return 1
-	fi
-	
-	while :
-	do
-		if [ ! -f "$_lockfile" ]; then
-			break
-		else
-			if [ -z "$_lockpid" ] ; then
-				_lockpid=$(cat "$_lockfile")
-			fi
-			if [ ! -z "$_lockpid" ] ; then
-				if ! kill -0 "$_lockpid" &>/dev/null ; then
-					_newlockpid=$(cat "$_lockfile")
-					if [ "$_lockpid" = "$_newlockpid" ] ; then
-						rm -f "$_lockfile"
-						break
-					else
-						_lockpid="$_newlockpid"
-						_newlockpid=""
-					fi
-				fi
-			elif [ -z "$_lockpid" ] ; then
-				rm -f "$_lockfile"
-				break
-			fi
-			if [ $(($(date +%s) - $(date +%s -r $_lockfile))) -gt "$_maxruntime" ] ; then
-				kill -9 "$_lockpid" &>/dev/null
-				break
-			fi
-		fi
-		sleep "$_waittime"
-	done
+    local _lockpid=""
+    local _newlockpid=""
+    local _lockfile=$1
+    local _maxruntime=$2
+    local _waittime=$3
+    if [ ! -f "$_lockfile" ] ; then
+        return 1
+    fi
+    if [ -z "$_maxruntime" ] ; then
+        _maxruntime=60
+    elif ! isposint "$_maxruntime" || [ "$_maxruntime" -lt 1 ] ; then
+        return 1
+    fi
+    
+    if [ -z "$_waittime" ] ; then
+        _waittime=3
+    elif ! isposint "$_waittime" || [ "$_waittime" -lt 1 ] ; then
+        return 1
+    fi
+    
+    while :
+    do
+        if [ ! -f "$_lockfile" ]; then
+            break
+        else
+            if [ -z "$_lockpid" ] ; then
+                _lockpid=$(cat "$_lockfile")
+            fi
+            if [ ! -z "$_lockpid" ] ; then
+                if ! kill -0 "$_lockpid" &>/dev/null ; then
+                    _newlockpid=$(cat "$_lockfile")
+                    if [ "$_lockpid" = "$_newlockpid" ] ; then
+                        rm -f "$_lockfile"
+                        break
+                    else
+                        _lockpid="$_newlockpid"
+                        _newlockpid=""
+                    fi
+                fi
+            elif [ -z "$_lockpid" ] ; then
+                rm -f "$_lockfile"
+                break
+            fi
+            if [ $(($(date +%s) - $(date +%s -r $_lockfile))) -gt "$_maxruntime" ] ; then
+                kill -9 "$_lockpid" &>/dev/null
+                break
+            fi
+        fi
+        sleep "$_waittime"
+    done
 }

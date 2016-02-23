@@ -425,7 +425,7 @@ if [ $_addtoknown -eq 0 ] && ( [ ! -f $_knownhostfile ] || ! grep -Fq "ssh://$_s
 	echo "ssh://$_sshuser@$_sshhost" >> $_knownhostfile
 fi
 if [ $_addtoknownsudo -eq 0 ] && ( [ ! -f $_knownhostfile ] || ! grep -Fq "ssh://root@$_sshhost"  $_knownhostfile ) ; then
-	sed -i -e '$a\' $_srcsbinpath/knownhost
+	sed -i -e '$a\' $_knownhostfile
 	echo "ssh://root@$_sshhost" >> $_knownhostfile
 fi
 
