@@ -1,0 +1,280 @@
+#!/usr/bin/env bash
+# Modern SSH key setup helper.
+# Copyright (C) 2026 Helal Uddin
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+set -Eeuo pipefail
+
+program=${0##*/}
+
+usage() {
+    cat <<'USAGE'
+Usage:
+  sshsetup-modern --host HOST --user USER [options]
+  sshsetup-modern USER@HOST [options]
+
+Creates or reuses a local SSH public key and installs it on a remote account.
+The default key is Ed25519 at ~/.ssh/id_ed25519.
+
+Options:
+  --host HOST                 Remote hostname or IP address.
+  --user USER                 Remote username.
+  --port PORT                 Remote SSH port.
+  --key PATH                  Private key path. Default: ~/.ssh/id_ed25519.
+  --type ed25519|rsa          Key type for new keys. Default: ed25519.
+  --bits BITS                 RSA key size for new RSA keys. Default: 4096.
+  --comment COMMENT           Key comment. Default: user@host:timestamp.
+  --force                     Overwrite an existing private key.
+  --root                      Also install the key for remote root via sudo.
+  --accept-new-host-key       Use StrictHostKeyChecking=accept-new.
+  --add-to-agent              Run ssh-add for the private key after setup.
+  --dry-run                   Print planned actions without changing anything.
+  -h, --help                  Show this help.
+
+Examples:
+  sshsetup-modern user@example.com
+  sshsetup-modern --host example.com --user deploy --key ~/.ssh/example_ed25519
+  sshsetup-modern root@example.com --accept-new-host-key
+USAGE
+}
+
+die() {
+    printf 'ERROR: %s\n' "$*" >&2
+    exit 1
+}
+
+info() {
+    printf 'INFO: %s\n' "$*" >&2
+}
+
+run() {
+    if [[ $dry_run == 1 ]]; then
+        printf 'DRY-RUN:'
+        printf ' %q' "$@"
+        printf '\n'
+    else
+        "$@"
+    fi
+}
+
+need_command() {
+    command -v "$1" >/dev/null 2>&1 || die "Required command not found: $1"
+}
+
+expand_path() {
+    local value=$1
+    case $value in
+        "~") printf '%s\n' "$HOME" ;;
+        "~/"*) printf '%s/%s\n' "$HOME" "${value#~/}" ;;
+        *) printf '%s\n' "$value" ;;
+    esac
+}
+
+validate_target_part() {
+    local label=$1
+    local value=$2
+
+    [[ -n $value ]] || die "$label is required"
+    [[ $value != *[[:space:]]* ]] || die "$label must not contain whitespace"
+    [[ $value != *[$'\001'-$'\037'$'\177']* ]] || die "$label contains control characters"
+}
+
+host=
+remote_user=
+port=
+key_path="${HOME}/.ssh/id_ed25519"
+key_type=ed25519
+bits=4096
+comment="${USER:-user}@$(hostname -f 2>/dev/null || hostname):$(date +%Y%m%d)"
+force=0
+setup_root=0
+accept_new_host_key=0
+add_to_agent=0
+dry_run=0
+
+while (($#)); do
+    case $1 in
+        --host)
+            [[ $# -ge 2 ]] || die "--host requires a value"
+            host=$2
+            shift 2
+            ;;
+        --user)
+            [[ $# -ge 2 ]] || die "--user requires a value"
+            remote_user=$2
+            shift 2
+            ;;
+        --port)
+            [[ $# -ge 2 ]] || die "--port requires a value"
+            port=$2
+            shift 2
+            ;;
+        --key)
+            [[ $# -ge 2 ]] || die "--key requires a value"
+            key_path=$(expand_path "$2")
+            shift 2
+            ;;
+        --type)
+            [[ $# -ge 2 ]] || die "--type requires a value"
+            key_type=$2
+            shift 2
+            ;;
+        --bits)
+            [[ $# -ge 2 ]] || die "--bits requires a value"
+            bits=$2
+            shift 2
+            ;;
+        --comment)
+            [[ $# -ge 2 ]] || die "--comment requires a value"
+            comment=$2
+            shift 2
+            ;;
+        --force)
+            force=1
+            shift
+            ;;
+        --root)
+            setup_root=1
+            shift
+            ;;
+        --accept-new-host-key)
+            accept_new_host_key=1
+            shift
+            ;;
+        --add-to-agent)
+            add_to_agent=1
+            shift
+            ;;
+        --dry-run)
+            dry_run=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *@*)
+            [[ -z $remote_user && -z $host ]] || die "Use either USER@HOST or --user/--host, not both"
+            remote_user=${1%@*}
+            host=${1#*@}
+            shift
+            ;;
+        *)
+            die "Unknown argument: $1"
+            ;;
+    esac
+done
+
+validate_target_part "user" "$remote_user"
+validate_target_part "host" "$host"
+
+[[ $port =~ ^[0-9]+$ || -z $port ]] || die "port must be numeric"
+if [[ -n $port && ( $port -lt 1 || $port -gt 65535 ) ]]; then
+    die "port must be between 1 and 65535"
+fi
+
+case $key_type in
+    ed25519) ;;
+    rsa)
+        [[ $bits =~ ^[0-9]+$ ]] || die "--bits must be numeric"
+        [[ $bits -ge 3072 ]] || die "RSA keys should be at least 3072 bits"
+        ;;
+    dsa)
+        die "DSA keys are obsolete and intentionally unsupported"
+        ;;
+    *)
+        die "Unsupported key type: $key_type"
+        ;;
+esac
+
+need_command ssh
+need_command ssh-keygen
+need_command ssh-copy-id
+
+key_dir=$(dirname "$key_path")
+pub_path="${key_path}.pub"
+target="${remote_user}@${host}"
+
+ssh_opts=()
+copy_opts=()
+if [[ -n $port ]]; then
+    ssh_opts+=(-p "$port")
+    copy_opts+=(-p "$port")
+fi
+if [[ $accept_new_host_key == 1 ]]; then
+    ssh_opts+=(-o StrictHostKeyChecking=accept-new)
+    copy_opts+=(-o StrictHostKeyChecking=accept-new)
+fi
+
+if [[ ! -d $key_dir ]]; then
+    run install -d -m 700 "$key_dir"
+elif [[ $key_dir == "${HOME}/.ssh" ]]; then
+    run chmod 700 "$key_dir"
+fi
+
+if [[ -e $key_path && $force == 1 ]]; then
+    run rm -f "$key_path" "$pub_path"
+fi
+
+if [[ ! -e $key_path ]]; then
+    info "Generating $key_type key at $key_path"
+    if [[ $key_type == rsa ]]; then
+        run ssh-keygen -t rsa -b "$bits" -f "$key_path" -C "$comment"
+    else
+        run ssh-keygen -t ed25519 -a 100 -f "$key_path" -C "$comment"
+    fi
+else
+    info "Using existing key: $key_path"
+fi
+
+if [[ ! -s $pub_path ]]; then
+    info "Regenerating missing public key: $pub_path"
+    if [[ $dry_run == 1 ]]; then
+        printf 'DRY-RUN: ssh-keygen -y -f %q > %q\n' "$key_path" "$pub_path"
+    else
+        ssh-keygen -y -f "$key_path" > "$pub_path"
+        chmod 644 "$pub_path"
+    fi
+fi
+
+if [[ $key_dir == "${HOME}/.ssh" ]]; then
+    run chmod 700 "$key_dir"
+fi
+run chmod 600 "$key_path"
+run chmod 644 "$pub_path"
+
+info "Installing public key for $target"
+run ssh-copy-id "${copy_opts[@]}" -i "$pub_path" "$target"
+
+if [[ $setup_root == 1 && $remote_user != root ]]; then
+    need_command mktemp
+    info "Installing public key for root@$host through sudo on $target"
+    if [[ $dry_run == 1 ]]; then
+        printf 'DRY-RUN: install %q into /root/.ssh/authorized_keys via sudo on %q\n' "$pub_path" "$target"
+    else
+        pub_key=$(<"$pub_path")
+        printf '%s\n' "$pub_key" | ssh "${ssh_opts[@]}" "$target" '
+            set -eu
+            tmp=$(mktemp)
+            trap "rm -f \"$tmp\"" EXIT
+            cat > "$tmp"
+            sudo install -d -m 700 -o root -g root /root/.ssh
+            sudo touch /root/.ssh/authorized_keys
+            sudo chown root:root /root/.ssh/authorized_keys
+            sudo chmod 600 /root/.ssh/authorized_keys
+            if ! sudo grep -qxF -f "$tmp" /root/.ssh/authorized_keys; then
+                sudo sh -c '"'"'cat "$1" >> /root/.ssh/authorized_keys'"'"' sh "$tmp"
+            fi
+        '
+    fi
+fi
+
+if [[ $add_to_agent == 1 ]]; then
+    need_command ssh-add
+    run ssh-add "$key_path"
+fi
+
+info "Verifying key login for $target"
+run ssh "${ssh_opts[@]}" -o BatchMode=yes -i "$key_path" "$target" 'printf "SSH key login OK\n"'
+
+info "Done. Keep password login enabled until you have verified key login from a separate terminal."
