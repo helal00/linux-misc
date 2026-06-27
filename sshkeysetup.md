@@ -1,8 +1,4 @@
-# linux-misc
-
-Small Linux administration helper scripts.
-
-## SSH key setup
+# sshkeysetup
 
 `sshkeysetup` helps you create or reuse an SSH key on your local computer and install the public key on a remote Linux machine.
 
