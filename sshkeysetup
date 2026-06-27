@@ -10,8 +10,8 @@ program=${0##*/}
 usage() {
     cat <<'USAGE'
 Usage:
-  sshsetup-modern --host HOST --user USER [options]
-  sshsetup-modern USER@HOST [options]
+  sshkeysetup --host HOST --user USER [options]
+  sshkeysetup USER@HOST [options]
 
 Creates or reuses a local SSH public key and installs it on a remote account.
 The default key is Ed25519 at ~/.ssh/id_ed25519.
@@ -32,9 +32,9 @@ Options:
   -h, --help                  Show this help.
 
 Examples:
-  sshsetup-modern user@example.com
-  sshsetup-modern --host example.com --user deploy --key ~/.ssh/example_ed25519
-  sshsetup-modern root@example.com --accept-new-host-key
+  sshkeysetup user@example.com
+  sshkeysetup --host example.com --user deploy --key ~/.ssh/example_ed25519
+  sshkeysetup root@example.com --accept-new-host-key
 USAGE
 }
 
