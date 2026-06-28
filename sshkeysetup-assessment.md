@@ -47,11 +47,27 @@ A future hardening tool should:
 Recommended new-server order:
 
 1. `sshkeysetup`: install keys and verify login.
-2. `sshharden`: disable password-based SSH and restrict root login.
-3. `server-firewall-base`: set UFW defaults and essential allow rules.
-4. `auto-allow-ip`: optionally enable dynamic allow rules for trusted SSH users.
-5. `f2b-ufw-enhanced`: install Fail2Ban jails and management layer.
-6. `linux-upgradespy` or replacement: report pending security updates and reboot/service-restart needs.
+2. `admin-user-setup`: create or verify a sudo-capable non-root admin user.
+3. `sshharden`: disable password-based SSH and restrict root login after admin login and sudo are verified.
+4. `server-firewall-base`: set UFW defaults and essential allow rules.
+5. `auto-allow-ip`: optionally enable dynamic allow rules for trusted SSH users.
+6. `f2b-ufw-enhanced`: install Fail2Ban jails and management layer.
+7. `linux-upgradespy` or replacement: report pending security updates and reboot/service-restart needs.
+
+## Admin User Safety Gate
+
+Minimal Ubuntu/Debian server images may not include the same default sudo user behavior as desktop installations or cloud images. Before root SSH is disabled, the hardening flow must ensure a non-root admin path exists.
+
+Required checks:
+
+- `sudo` is installed.
+- a normal admin user exists or is created.
+- the user belongs to the correct admin group.
+- the SSH public key is installed for that user.
+- login as that user works.
+- `sudo -v` works for that user.
+
+Only after those checks pass should `sshharden` disable direct root SSH login.
 
 ## References
 
