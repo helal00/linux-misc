@@ -6,6 +6,7 @@ Use it when you want passwordless SSH login from:
 
 - Linux or macOS: `sshkeysetup`
 - Windows PowerShell: `sshkeysetup.ps1`
+- Windows Command Prompt or double-click launcher: `sshkeysetup.cmd`
 
 The original legacy `sshsetup` script is preserved on the `old` branch. The `main` branch uses the modern `sshkeysetup` name.
 
@@ -104,6 +105,24 @@ Also install the key for remote root through sudo:
 ```powershell
 .\sshkeysetup.ps1 user@example.com -Root -AcceptNewHostKey
 ```
+
+## Windows Command Prompt Usage
+
+From the `linux-misc` directory in Command Prompt:
+
+```bat
+sshkeysetup.cmd user@example.com -AcceptNewHostKey
+```
+
+With a custom SSH port:
+
+```bat
+sshkeysetup.cmd user@example.com -Port 2222 -AcceptNewHostKey
+```
+
+The `.cmd` file is a launcher for `sshkeysetup.ps1`. It uses PowerShell with a process-only execution-policy bypass, so it does not permanently change the user's PowerShell execution policy.
+
+If you double-click `sshkeysetup.cmd`, it prompts for `user@host` and runs with `-AcceptNewHostKey`.
 
 ## Default Key Locations
 
