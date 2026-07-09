@@ -84,25 +84,6 @@ function Test-TargetPart {
     }
 }
 
-function ConvertTo-ShellSingleQuoted {
-    param([string]$Value)
-
-    return "'" + ($Value -replace "'", "'\''") + "'"
-}
-
-function Invoke-SshRemoteCommand {
-    param(
-        [string[]]$BaseArgs,
-        [string]$Target,
-        [string]$RemoteCommand
-    )
-
-    & ssh @BaseArgs -- $Target $RemoteCommand
-    if ($LASTEXITCODE -ne 0) {
-        Stop-WithError "ssh failed with exit code $LASTEXITCODE"
-    }
-}
-
 if ($Target) {
     if ($Target -notmatch "^[^@]+@[^@]+$") {
         Stop-WithError "Target must be in USER@HOST format"
@@ -201,13 +182,19 @@ if ([string]::IsNullOrWhiteSpace($PublicKey)) {
     Stop-WithError "Public key is empty: $PublicKeyPath"
 }
 
-$RemoteKeyPath = "/tmp/sshkeysetup-$([Guid]::NewGuid().ToString('N')).pub"
-$QuotedRemoteKeyPath = ConvertTo-ShellSingleQuoted -Value $RemoteKeyPath
-$InstallUserKey = @(
-    'remote_key=' + $QuotedRemoteKeyPath,
+$RunId = [Guid]::NewGuid().ToString('N')
+$RemoteKeyPath = "/tmp/sshkeysetup-$RunId.pub"
+$RemoteScriptPath = "/tmp/sshkeysetup-$RunId.sh"
+$LocalScriptPath = Join-Path ([IO.Path]::GetTempPath()) "sshkeysetup-$RunId.sh"
+$RootFlag = if ($Root -and $User -ne "root") { "1" } else { "0" }
+$InstallScriptLines = @(
+    '#!/bin/sh',
+    'set -eu',
+    'remote_key=$1',
+    'install_root=${2:-0}',
     'remote_user=$(id -un)',
     'remote_group=$(id -gn)',
-    'home_dir=$(getent passwd "$remote_user" | cut -d: -f6)',
+    'home_dir=$(getent passwd "$remote_user" | cut -d: -f6 || true)',
     '[ -n "$home_dir" ] || home_dir="$HOME"',
     'umask 077',
     'if ! mkdir -p "$home_dir/.ssh" 2>/dev/null; then sudo install -d -m 700 -o "$remote_user" -g "$remote_group" "$home_dir/.ssh"; fi',
@@ -215,41 +202,43 @@ $InstallUserKey = @(
     'chmod 700 "$home_dir/.ssh" 2>/dev/null || sudo chmod 700 "$home_dir/.ssh"',
     'chmod 600 "$home_dir/.ssh/authorized_keys" 2>/dev/null || sudo chmod 600 "$home_dir/.ssh/authorized_keys"',
     'chown "$remote_user:$remote_group" "$home_dir/.ssh" "$home_dir/.ssh/authorized_keys" 2>/dev/null || sudo chown "$remote_user:$remote_group" "$home_dir/.ssh" "$home_dir/.ssh/authorized_keys"',
-    'if ! grep -qxF -f "$remote_key" "$home_dir/.ssh/authorized_keys" 2>/dev/null; then if ! cat "$remote_key" >> "$home_dir/.ssh/authorized_keys" 2>/dev/null; then sudo sh -c ''cat "$1" >> "$2"'' sh "$remote_key" "$home_dir/.ssh/authorized_keys"; fi; fi'
-) -join '; '
+    'if ! grep -qxF -f "$remote_key" "$home_dir/.ssh/authorized_keys" 2>/dev/null; then if ! cat "$remote_key" >> "$home_dir/.ssh/authorized_keys" 2>/dev/null; then sudo tee -a "$home_dir/.ssh/authorized_keys" < "$remote_key" >/dev/null; fi; fi',
+    'if [ "$install_root" = "1" ]; then',
+    '    sudo install -d -m 700 -o root -g root /root/.ssh',
+    '    sudo touch /root/.ssh/authorized_keys',
+    '    sudo chown root:root /root/.ssh/authorized_keys',
+    '    sudo chmod 600 /root/.ssh/authorized_keys',
+    '    sudo grep -qxF -f "$remote_key" /root/.ssh/authorized_keys || sudo tee -a /root/.ssh/authorized_keys < "$remote_key" >/dev/null',
+    'fi'
+)
 
 Write-Info "Installing public key for $RemoteTarget"
 if ($DryRun) {
     Write-Host "DRY-RUN: scp $PublicKeyPath to ${RemoteTarget}:$RemoteKeyPath"
-    Write-Host "DRY-RUN: install $RemoteKeyPath into $RemoteTarget authorized_keys"
+    Write-Host "DRY-RUN: scp temporary installer to ${RemoteTarget}:$RemoteScriptPath"
+    Write-Host "DRY-RUN: sh $RemoteScriptPath $RemoteKeyPath $RootFlag"
 } else {
+    Set-Content -NoNewline -Encoding ascii -LiteralPath $LocalScriptPath -Value (($InstallScriptLines -join "`n") + "`n")
     & scp @ScpArgs "$PublicKeyPath" "${RemoteTarget}:$RemoteKeyPath"
     if ($LASTEXITCODE -ne 0) {
         Stop-WithError "scp failed with exit code $LASTEXITCODE"
     }
-    Invoke-SshRemoteCommand -BaseArgs $SshArgs -Target $RemoteTarget -RemoteCommand $InstallUserKey
-}
-
-if ($Root -and $User -ne "root") {
-    $InstallRootKey = @(
-        'remote_key=' + $QuotedRemoteKeyPath,
-        'sudo install -d -m 700 -o root -g root /root/.ssh',
-        'sudo touch /root/.ssh/authorized_keys',
-        'sudo chown root:root /root/.ssh/authorized_keys',
-        'sudo chmod 600 /root/.ssh/authorized_keys',
-        'sudo grep -qxF -f "$remote_key" /root/.ssh/authorized_keys || sudo sh -c ''cat "$1" >> /root/.ssh/authorized_keys'' sh "$remote_key"'
-    ) -join '; '
-    Write-Info "Installing public key for root@$HostName through sudo on $RemoteTarget"
-    if ($DryRun) {
-        Write-Host "DRY-RUN: install $PublicKeyPath into root@$HostName authorized_keys through sudo on $RemoteTarget"
-    } else {
-        Invoke-SshRemoteCommand -BaseArgs $SshArgs -Target $RemoteTarget -RemoteCommand $InstallRootKey
+    & scp @ScpArgs "$LocalScriptPath" "${RemoteTarget}:$RemoteScriptPath"
+    if ($LASTEXITCODE -ne 0) {
+        Stop-WithError "scp failed with exit code $LASTEXITCODE"
+    }
+    if ($RootFlag -eq "1") {
+        Write-Info "Installing public key for root@$HostName through sudo on $RemoteTarget"
+    }
+    & ssh @SshArgs -- $RemoteTarget "sh" $RemoteScriptPath $RemoteKeyPath $RootFlag
+    if ($LASTEXITCODE -ne 0) {
+        Stop-WithError "ssh failed with exit code $LASTEXITCODE"
     }
 }
 
 if (-not $DryRun) {
-    $CleanupRemoteKey = "rm -f $QuotedRemoteKeyPath"
-    & ssh @SshArgs -- $RemoteTarget $CleanupRemoteKey
+    & ssh @SshArgs -- $RemoteTarget "rm" "-f" $RemoteKeyPath $RemoteScriptPath
+    Remove-Item -Force -LiteralPath $LocalScriptPath -ErrorAction SilentlyContinue
 }
 
 if ($AddToAgent) {
