@@ -180,6 +180,7 @@ if ([string]::IsNullOrWhiteSpace($PublicKey)) {
 if ($PublicKey -match "[`r`n]") {
     Stop-WithError "Public key must be a single line: $PublicKeyPath"
 }
+$PublicKeyBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($PublicKey))
 
 $RunId = [Guid]::NewGuid().ToString('N')
 $LocalScriptPath = Join-Path ([IO.Path]::GetTempPath()) "sshkeysetup-$RunId.sh"
@@ -187,11 +188,9 @@ $RootFlag = if ($Root -and $User -ne "root") { "1" } else { "0" }
 $InstallScriptLines = @(
     '#!/bin/sh',
     'set -eu',
-    'install_root=' + $RootFlag,
-    'public_key=$(cat <<''SSHKEYSETUP_PUBLIC_KEY_END''',
-    $PublicKey,
-    'SSHKEYSETUP_PUBLIC_KEY_END',
-    ')',
+    "install_root=$RootFlag",
+    "public_key_b64='$PublicKeyBase64'",
+    'if command -v base64 >/dev/null 2>&1; then public_key=$(printf "%s" "$public_key_b64" | base64 -d); else echo "ERROR: remote base64 command not found" >&2; exit 12; fi',
     'remote_user=$(id -un)',
     'remote_group=$(id -gn)',
     'home_dir=$(getent passwd "$remote_user" | cut -d: -f6 || true)',
