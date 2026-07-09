@@ -197,14 +197,23 @@ if ([string]::IsNullOrWhiteSpace($PublicKey)) {
     Stop-WithError "Public key is empty: $PublicKeyPath"
 }
 
-$QuotedPublicKey = ConvertTo-ShellSingleQuoted -Value $PublicKey
+$PublicKeyPayload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($PublicKey + "`n"))
+$QuotedPublicKeyPayload = ConvertTo-ShellSingleQuoted -Value $PublicKeyPayload
 $InstallUserKey = @(
+    'remote_user=$(id -un)',
+    'remote_group=$(id -gn)',
+    'home_dir=$(getent passwd "$remote_user" | cut -d: -f6)',
+    '[ -n "$home_dir" ] || home_dir="$HOME"',
     'umask 077',
-    'mkdir -p "$HOME/.ssh"',
-    'touch "$HOME/.ssh/authorized_keys"',
-    'chmod 700 "$HOME/.ssh"',
-    'chmod 600 "$HOME/.ssh/authorized_keys"',
-    'grep -qxF ' + $QuotedPublicKey + ' "$HOME/.ssh/authorized_keys" || printf ''%s\n'' ' + $QuotedPublicKey + ' >> "$HOME/.ssh/authorized_keys"'
+    'tmp=$(mktemp)',
+    'trap ''rm -f "$tmp"'' EXIT',
+    'printf ''%s'' ' + $QuotedPublicKeyPayload + ' | base64 -d > "$tmp"',
+    'if ! mkdir -p "$home_dir/.ssh" 2>/dev/null; then sudo install -d -m 700 -o "$remote_user" -g "$remote_group" "$home_dir/.ssh"; fi',
+    'if ! touch "$home_dir/.ssh/authorized_keys" 2>/dev/null; then sudo touch "$home_dir/.ssh/authorized_keys"; sudo chown "$remote_user:$remote_group" "$home_dir/.ssh/authorized_keys"; fi',
+    'chmod 700 "$home_dir/.ssh" 2>/dev/null || sudo chmod 700 "$home_dir/.ssh"',
+    'chmod 600 "$home_dir/.ssh/authorized_keys" 2>/dev/null || sudo chmod 600 "$home_dir/.ssh/authorized_keys"',
+    'chown "$remote_user:$remote_group" "$home_dir/.ssh" "$home_dir/.ssh/authorized_keys" 2>/dev/null || sudo chown "$remote_user:$remote_group" "$home_dir/.ssh" "$home_dir/.ssh/authorized_keys"',
+    'if ! grep -qxF -f "$tmp" "$home_dir/.ssh/authorized_keys" 2>/dev/null; then if ! cat "$tmp" >> "$home_dir/.ssh/authorized_keys" 2>/dev/null; then sudo sh -c ''cat "$1" >> "$2"'' sh "$tmp" "$home_dir/.ssh/authorized_keys"; fi; fi'
 ) -join '; '
 
 Write-Info "Installing public key for $RemoteTarget"
@@ -218,7 +227,7 @@ if ($Root -and $User -ne "root") {
     $InstallRootKey = @(
         'tmp=$(mktemp)',
         'trap ''rm -f "$tmp"'' EXIT',
-        'printf ''%s\n'' ' + $QuotedPublicKey + ' > "$tmp"',
+        'printf ''%s'' ' + $QuotedPublicKeyPayload + ' | base64 -d > "$tmp"',
         'sudo install -d -m 700 -o root -g root /root/.ssh',
         'sudo touch /root/.ssh/authorized_keys',
         'sudo chown root:root /root/.ssh/authorized_keys',
