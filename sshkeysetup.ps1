@@ -127,6 +127,7 @@ if ($Type -eq "rsa" -and $Bits -lt 3072) {
 
 Test-Command ssh
 Test-Command ssh-keygen
+Test-Command scp
 
 $KeyPath = [Environment]::ExpandEnvironmentVariables($KeyPath)
 $KeyPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($KeyPath)
@@ -135,11 +136,14 @@ $PublicKeyPath = "$KeyPath.pub"
 $RemoteTarget = "$User@$HostName"
 
 $SshArgs = @()
+$ScpArgs = @()
 if ($Port -gt 0) {
     $SshArgs += @("-p", "$Port")
+    $ScpArgs += @("-P", "$Port")
 }
 if ($AcceptNewHostKey) {
     $SshArgs += @("-o", "StrictHostKeyChecking=accept-new")
+    $ScpArgs += @("-o", "StrictHostKeyChecking=accept-new")
 }
 
 if (-not (Test-Path -LiteralPath $KeyDir)) {
@@ -197,42 +201,43 @@ if ([string]::IsNullOrWhiteSpace($PublicKey)) {
     Stop-WithError "Public key is empty: $PublicKeyPath"
 }
 
-$PublicKeyPayload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($PublicKey + "`n"))
-$QuotedPublicKeyPayload = ConvertTo-ShellSingleQuoted -Value $PublicKeyPayload
+$RemoteKeyPath = "/tmp/sshkeysetup-$([Guid]::NewGuid().ToString('N')).pub"
+$QuotedRemoteKeyPath = ConvertTo-ShellSingleQuoted -Value $RemoteKeyPath
 $InstallUserKey = @(
+    'remote_key=' + $QuotedRemoteKeyPath,
     'remote_user=$(id -un)',
     'remote_group=$(id -gn)',
     'home_dir=$(getent passwd "$remote_user" | cut -d: -f6)',
     '[ -n "$home_dir" ] || home_dir="$HOME"',
     'umask 077',
-    'tmp=$(mktemp)',
-    'trap ''rm -f "$tmp"'' EXIT',
-    'printf ''%s'' ' + $QuotedPublicKeyPayload + ' | base64 -d > "$tmp"',
     'if ! mkdir -p "$home_dir/.ssh" 2>/dev/null; then sudo install -d -m 700 -o "$remote_user" -g "$remote_group" "$home_dir/.ssh"; fi',
     'if ! touch "$home_dir/.ssh/authorized_keys" 2>/dev/null; then sudo touch "$home_dir/.ssh/authorized_keys"; sudo chown "$remote_user:$remote_group" "$home_dir/.ssh/authorized_keys"; fi',
     'chmod 700 "$home_dir/.ssh" 2>/dev/null || sudo chmod 700 "$home_dir/.ssh"',
     'chmod 600 "$home_dir/.ssh/authorized_keys" 2>/dev/null || sudo chmod 600 "$home_dir/.ssh/authorized_keys"',
     'chown "$remote_user:$remote_group" "$home_dir/.ssh" "$home_dir/.ssh/authorized_keys" 2>/dev/null || sudo chown "$remote_user:$remote_group" "$home_dir/.ssh" "$home_dir/.ssh/authorized_keys"',
-    'if ! grep -qxF -f "$tmp" "$home_dir/.ssh/authorized_keys" 2>/dev/null; then if ! cat "$tmp" >> "$home_dir/.ssh/authorized_keys" 2>/dev/null; then sudo sh -c ''cat "$1" >> "$2"'' sh "$tmp" "$home_dir/.ssh/authorized_keys"; fi; fi'
+    'if ! grep -qxF -f "$remote_key" "$home_dir/.ssh/authorized_keys" 2>/dev/null; then if ! cat "$remote_key" >> "$home_dir/.ssh/authorized_keys" 2>/dev/null; then sudo sh -c ''cat "$1" >> "$2"'' sh "$remote_key" "$home_dir/.ssh/authorized_keys"; fi; fi'
 ) -join '; '
 
 Write-Info "Installing public key for $RemoteTarget"
 if ($DryRun) {
-    Write-Host "DRY-RUN: install $PublicKeyPath into $RemoteTarget authorized_keys"
+    Write-Host "DRY-RUN: scp $PublicKeyPath to ${RemoteTarget}:$RemoteKeyPath"
+    Write-Host "DRY-RUN: install $RemoteKeyPath into $RemoteTarget authorized_keys"
 } else {
+    & scp @ScpArgs "$PublicKeyPath" "${RemoteTarget}:$RemoteKeyPath"
+    if ($LASTEXITCODE -ne 0) {
+        Stop-WithError "scp failed with exit code $LASTEXITCODE"
+    }
     Invoke-SshRemoteCommand -BaseArgs $SshArgs -Target $RemoteTarget -RemoteCommand $InstallUserKey
 }
 
 if ($Root -and $User -ne "root") {
     $InstallRootKey = @(
-        'tmp=$(mktemp)',
-        'trap ''rm -f "$tmp"'' EXIT',
-        'printf ''%s'' ' + $QuotedPublicKeyPayload + ' | base64 -d > "$tmp"',
+        'remote_key=' + $QuotedRemoteKeyPath,
         'sudo install -d -m 700 -o root -g root /root/.ssh',
         'sudo touch /root/.ssh/authorized_keys',
         'sudo chown root:root /root/.ssh/authorized_keys',
         'sudo chmod 600 /root/.ssh/authorized_keys',
-        'sudo grep -qxF -f "$tmp" /root/.ssh/authorized_keys || sudo sh -c ''cat "$1" >> /root/.ssh/authorized_keys'' sh "$tmp"'
+        'sudo grep -qxF -f "$remote_key" /root/.ssh/authorized_keys || sudo sh -c ''cat "$1" >> /root/.ssh/authorized_keys'' sh "$remote_key"'
     ) -join '; '
     Write-Info "Installing public key for root@$HostName through sudo on $RemoteTarget"
     if ($DryRun) {
@@ -240,6 +245,11 @@ if ($Root -and $User -ne "root") {
     } else {
         Invoke-SshRemoteCommand -BaseArgs $SshArgs -Target $RemoteTarget -RemoteCommand $InstallRootKey
     }
+}
+
+if (-not $DryRun) {
+    $CleanupRemoteKey = "rm -f $QuotedRemoteKeyPath"
+    & ssh @SshArgs -- $RemoteTarget $CleanupRemoteKey
 }
 
 if ($AddToAgent) {
