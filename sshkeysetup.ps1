@@ -217,13 +217,13 @@ $InstallScriptLines = @(
 
 Write-Info "Installing public key for $RemoteTarget"
 if ($DryRun) {
-    Write-Host "DRY-RUN: pipe temporary installer into $RemoteTarget with ssh sh -s"
+    Write-Host "DRY-RUN: pipe temporary installer into $RemoteTarget with ssh tr -d '\\015' | sh -s"
 } else {
     Set-Content -NoNewline -Encoding ascii -LiteralPath $LocalScriptPath -Value (($InstallScriptLines -join "`n") + "`n")
     if ($RootFlag -eq "1") {
         Write-Info "Installing public key for root@$HostName through sudo on $RemoteTarget"
     }
-    Get-Content -Raw -Encoding ascii -LiteralPath $LocalScriptPath | & ssh @SshArgs -- $RemoteTarget "sh" "-s"
+    Get-Content -Raw -Encoding ascii -LiteralPath $LocalScriptPath | & ssh @SshArgs -- $RemoteTarget "tr -d '\015' | sh -s"
     if ($LASTEXITCODE -ne 0) {
         Stop-WithError "ssh failed with exit code $LASTEXITCODE"
     }
