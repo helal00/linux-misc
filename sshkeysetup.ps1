@@ -84,6 +84,25 @@ function Test-TargetPart {
     }
 }
 
+function ConvertTo-ShellSingleQuoted {
+    param([string]$Value)
+
+    return "'" + ($Value -replace "'", "'\''") + "'"
+}
+
+function Invoke-SshRemoteCommand {
+    param(
+        [string[]]$BaseArgs,
+        [string]$Target,
+        [string]$RemoteCommand
+    )
+
+    & ssh @BaseArgs -- $Target $RemoteCommand
+    if ($LASTEXITCODE -ne 0) {
+        Stop-WithError "ssh failed with exit code $LASTEXITCODE"
+    }
+}
+
 if ($Target) {
     if ($Target -notmatch "^[^@]+@[^@]+$") {
         Stop-WithError "Target must be in USER@HOST format"
@@ -178,28 +197,39 @@ if ([string]::IsNullOrWhiteSpace($PublicKey)) {
     Stop-WithError "Public key is empty: $PublicKeyPath"
 }
 
-$InstallUserKey = 'key=$(cat); umask 077; mkdir -p "$HOME/.ssh"; touch "$HOME/.ssh/authorized_keys"; chmod 700 "$HOME/.ssh"; chmod 600 "$HOME/.ssh/authorized_keys"; grep -qxF "$key" "$HOME/.ssh/authorized_keys" || printf "%s\n" "$key" >> "$HOME/.ssh/authorized_keys"'
+$QuotedPublicKey = ConvertTo-ShellSingleQuoted -Value $PublicKey
+$InstallUserKey = @(
+    'umask 077',
+    'mkdir -p "$HOME/.ssh"',
+    'touch "$HOME/.ssh/authorized_keys"',
+    'chmod 700 "$HOME/.ssh"',
+    'chmod 600 "$HOME/.ssh/authorized_keys"',
+    'grep -qxF ' + $QuotedPublicKey + ' "$HOME/.ssh/authorized_keys" || printf ''%s\n'' ' + $QuotedPublicKey + ' >> "$HOME/.ssh/authorized_keys"'
+) -join '; '
 
 Write-Info "Installing public key for $RemoteTarget"
 if ($DryRun) {
-    Write-Host "DRY-RUN: pipe $PublicKeyPath to ssh $RemoteTarget authorized_keys installer"
+    Write-Host "DRY-RUN: install $PublicKeyPath into $RemoteTarget authorized_keys"
 } else {
-    $PublicKey | & ssh @SshArgs $RemoteTarget $InstallUserKey
-    if ($LASTEXITCODE -ne 0) {
-        Stop-WithError "Remote key installation failed with exit code $LASTEXITCODE"
-    }
+    Invoke-SshRemoteCommand -BaseArgs $SshArgs -Target $RemoteTarget -RemoteCommand $InstallUserKey
 }
 
 if ($Root -and $User -ne "root") {
-    $InstallRootKey = 'key=$(cat); tmp=$(mktemp); trap "rm -f \"$tmp\"" EXIT; printf "%s\n" "$key" > "$tmp"; sudo install -d -m 700 -o root -g root /root/.ssh; sudo touch /root/.ssh/authorized_keys; sudo chown root:root /root/.ssh/authorized_keys; sudo chmod 600 /root/.ssh/authorized_keys; sudo grep -qxF -f "$tmp" /root/.ssh/authorized_keys || cat "$tmp" | sudo tee -a /root/.ssh/authorized_keys >/dev/null'
+    $InstallRootKey = @(
+        'tmp=$(mktemp)',
+        'trap ''rm -f "$tmp"'' EXIT',
+        'printf ''%s\n'' ' + $QuotedPublicKey + ' > "$tmp"',
+        'sudo install -d -m 700 -o root -g root /root/.ssh',
+        'sudo touch /root/.ssh/authorized_keys',
+        'sudo chown root:root /root/.ssh/authorized_keys',
+        'sudo chmod 600 /root/.ssh/authorized_keys',
+        'sudo grep -qxF -f "$tmp" /root/.ssh/authorized_keys || sudo sh -c ''cat "$1" >> /root/.ssh/authorized_keys'' sh "$tmp"'
+    ) -join '; '
     Write-Info "Installing public key for root@$HostName through sudo on $RemoteTarget"
     if ($DryRun) {
-        Write-Host "DRY-RUN: pipe $PublicKeyPath to ssh $RemoteTarget sudo root authorized_keys installer"
+        Write-Host "DRY-RUN: install $PublicKeyPath into root@$HostName authorized_keys through sudo on $RemoteTarget"
     } else {
-        $PublicKey | & ssh @SshArgs $RemoteTarget $InstallRootKey
-        if ($LASTEXITCODE -ne 0) {
-            Stop-WithError "Remote root key installation failed with exit code $LASTEXITCODE"
-        }
+        Invoke-SshRemoteCommand -BaseArgs $SshArgs -Target $RemoteTarget -RemoteCommand $InstallRootKey
     }
 }
 
