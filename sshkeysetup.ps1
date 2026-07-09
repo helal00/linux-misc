@@ -108,7 +108,6 @@ if ($Type -eq "rsa" -and $Bits -lt 3072) {
 
 Test-Command ssh
 Test-Command ssh-keygen
-Test-Command scp
 
 $KeyPath = [Environment]::ExpandEnvironmentVariables($KeyPath)
 $KeyPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($KeyPath)
@@ -117,14 +116,11 @@ $PublicKeyPath = "$KeyPath.pub"
 $RemoteTarget = "$User@$HostName"
 
 $SshArgs = @()
-$ScpArgs = @()
 if ($Port -gt 0) {
     $SshArgs += @("-p", "$Port")
-    $ScpArgs += @("-P", "$Port")
 }
 if ($AcceptNewHostKey) {
     $SshArgs += @("-o", "StrictHostKeyChecking=accept-new")
-    $ScpArgs += @("-o", "StrictHostKeyChecking=accept-new")
 }
 
 if (-not (Test-Path -LiteralPath $KeyDir)) {
@@ -181,17 +177,21 @@ if ((Test-Path -LiteralPath $PublicKeyPath)) {
 if ([string]::IsNullOrWhiteSpace($PublicKey)) {
     Stop-WithError "Public key is empty: $PublicKeyPath"
 }
+if ($PublicKey -match "[`r`n]") {
+    Stop-WithError "Public key must be a single line: $PublicKeyPath"
+}
 
 $RunId = [Guid]::NewGuid().ToString('N')
-$RemoteKeyPath = "/tmp/sshkeysetup-$RunId.pub"
-$RemoteScriptPath = "/tmp/sshkeysetup-$RunId.sh"
 $LocalScriptPath = Join-Path ([IO.Path]::GetTempPath()) "sshkeysetup-$RunId.sh"
 $RootFlag = if ($Root -and $User -ne "root") { "1" } else { "0" }
 $InstallScriptLines = @(
     '#!/bin/sh',
     'set -eu',
-    'remote_key=$1',
-    'install_root=${2:-0}',
+    'install_root=' + $RootFlag,
+    'public_key=$(cat <<''SSHKEYSETUP_PUBLIC_KEY_END''',
+    $PublicKey,
+    'SSHKEYSETUP_PUBLIC_KEY_END',
+    ')',
     'remote_user=$(id -un)',
     'remote_group=$(id -gn)',
     'home_dir=$(getent passwd "$remote_user" | cut -d: -f6 || true)',
@@ -202,42 +202,35 @@ $InstallScriptLines = @(
     'chmod 700 "$home_dir/.ssh" 2>/dev/null || sudo chmod 700 "$home_dir/.ssh"',
     'chmod 600 "$home_dir/.ssh/authorized_keys" 2>/dev/null || sudo chmod 600 "$home_dir/.ssh/authorized_keys"',
     'chown "$remote_user:$remote_group" "$home_dir/.ssh" "$home_dir/.ssh/authorized_keys" 2>/dev/null || sudo chown "$remote_user:$remote_group" "$home_dir/.ssh" "$home_dir/.ssh/authorized_keys"',
-    'if ! grep -qxF -f "$remote_key" "$home_dir/.ssh/authorized_keys" 2>/dev/null; then if ! cat "$remote_key" >> "$home_dir/.ssh/authorized_keys" 2>/dev/null; then sudo tee -a "$home_dir/.ssh/authorized_keys" < "$remote_key" >/dev/null; fi; fi',
+    'if ! grep -qxF "$public_key" "$home_dir/.ssh/authorized_keys" 2>/dev/null; then if ! printf "%s\n" "$public_key" >> "$home_dir/.ssh/authorized_keys" 2>/dev/null; then printf "%s\n" "$public_key" | sudo tee -a "$home_dir/.ssh/authorized_keys" >/dev/null; fi; fi',
+    'if ! grep -qxF "$public_key" "$home_dir/.ssh/authorized_keys" 2>/dev/null; then echo "ERROR: key was not found after install: $home_dir/.ssh/authorized_keys" >&2; exit 10; fi',
+    'printf "Installed key in %s\n" "$home_dir/.ssh/authorized_keys"',
     'if [ "$install_root" = "1" ]; then',
     '    sudo install -d -m 700 -o root -g root /root/.ssh',
     '    sudo touch /root/.ssh/authorized_keys',
     '    sudo chown root:root /root/.ssh/authorized_keys',
     '    sudo chmod 600 /root/.ssh/authorized_keys',
-    '    sudo grep -qxF -f "$remote_key" /root/.ssh/authorized_keys || sudo tee -a /root/.ssh/authorized_keys < "$remote_key" >/dev/null',
+    '    sudo grep -qxF "$public_key" /root/.ssh/authorized_keys || printf "%s\n" "$public_key" | sudo tee -a /root/.ssh/authorized_keys >/dev/null',
+    '    sudo grep -qxF "$public_key" /root/.ssh/authorized_keys || { echo "ERROR: key was not found after root install: /root/.ssh/authorized_keys" >&2; exit 11; }',
+    '    printf "Installed key in /root/.ssh/authorized_keys\n"',
     'fi'
 )
 
 Write-Info "Installing public key for $RemoteTarget"
 if ($DryRun) {
-    Write-Host "DRY-RUN: scp $PublicKeyPath to ${RemoteTarget}:$RemoteKeyPath"
-    Write-Host "DRY-RUN: scp temporary installer to ${RemoteTarget}:$RemoteScriptPath"
-    Write-Host "DRY-RUN: sh $RemoteScriptPath $RemoteKeyPath $RootFlag"
+    Write-Host "DRY-RUN: pipe temporary installer into $RemoteTarget with ssh sh -s"
 } else {
     Set-Content -NoNewline -Encoding ascii -LiteralPath $LocalScriptPath -Value (($InstallScriptLines -join "`n") + "`n")
-    & scp @ScpArgs "$PublicKeyPath" "${RemoteTarget}:$RemoteKeyPath"
-    if ($LASTEXITCODE -ne 0) {
-        Stop-WithError "scp failed with exit code $LASTEXITCODE"
-    }
-    & scp @ScpArgs "$LocalScriptPath" "${RemoteTarget}:$RemoteScriptPath"
-    if ($LASTEXITCODE -ne 0) {
-        Stop-WithError "scp failed with exit code $LASTEXITCODE"
-    }
     if ($RootFlag -eq "1") {
         Write-Info "Installing public key for root@$HostName through sudo on $RemoteTarget"
     }
-    & ssh @SshArgs -- $RemoteTarget "sh" $RemoteScriptPath $RemoteKeyPath $RootFlag
+    Get-Content -Raw -Encoding ascii -LiteralPath $LocalScriptPath | & ssh @SshArgs -- $RemoteTarget "sh" "-s"
     if ($LASTEXITCODE -ne 0) {
         Stop-WithError "ssh failed with exit code $LASTEXITCODE"
     }
 }
 
 if (-not $DryRun) {
-    & ssh @SshArgs -- $RemoteTarget "rm" "-f" $RemoteKeyPath $RemoteScriptPath
     Remove-Item -Force -LiteralPath $LocalScriptPath -ErrorAction SilentlyContinue
 }
 
@@ -247,7 +240,10 @@ if ($AddToAgent) {
 }
 
 Write-Info "Verifying key login for $RemoteTarget"
-$VerifyArgs = @() + $SshArgs + @("-o", "BatchMode=yes", "-i", $KeyPath, $RemoteTarget, 'printf "SSH key login OK\n"')
-Invoke-CommandLine -Command "ssh" -Arguments $VerifyArgs
+$VerifyArgs = @() + $SshArgs + @("-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-i", $KeyPath, $RemoteTarget, 'printf "SSH key login OK\n"')
+& ssh @VerifyArgs
+if ($LASTEXITCODE -ne 0) {
+    Stop-WithError "Key was installed, but key login was rejected. Check sshd PubkeyAuthentication, AuthorizedKeysFile, home directory permissions, and that this private key matches $PublicKeyPath."
+}
 
 Write-Info "Done. Keep password login enabled until you have verified key login from a separate terminal."
