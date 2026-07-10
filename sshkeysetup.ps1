@@ -212,7 +212,8 @@ $InstallScriptLines = @(
     '    sudo grep -qxF "$public_key" /root/.ssh/authorized_keys || printf "%s\n" "$public_key" | sudo tee -a /root/.ssh/authorized_keys >/dev/null',
     '    sudo grep -qxF "$public_key" /root/.ssh/authorized_keys || { echo "ERROR: key was not found after root install: /root/.ssh/authorized_keys" >&2; exit 11; }',
     '    printf "Installed key in /root/.ssh/authorized_keys\n"',
-    'fi'
+    'fi',
+    'exit 0'
 )
 
 Write-Info "Installing public key for $RemoteTarget"
