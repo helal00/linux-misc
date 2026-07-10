@@ -225,8 +225,9 @@ if ($DryRun) {
         Write-Info "Installing public key for root@$HostName through sudo on $RemoteTarget"
     }
     Get-Content -Raw -Encoding ascii -LiteralPath $LocalScriptPath | & ssh @SshArgs -- $RemoteTarget "tr -d '\015' | sh -s"
-    if ($LASTEXITCODE -ne 0) {
-        Stop-WithError "ssh failed with exit code $LASTEXITCODE"
+    $InstallExitCode = $LASTEXITCODE
+    if ($InstallExitCode -ne 0) {
+        Write-Info "Install command returned exit code $InstallExitCode after running. Continuing to key-login verification."
     }
 }
 
